@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Trace Activity Tracker",
+  "version": "1.0.0",
+  "description": "Sends browser activity to your local Trace app.",
+  "permissions": ["tabs"],
+  "host_permissions": [
+    "http://localhost:7734/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "favicon.png",
+    "48": "favicon.png",
+    "128": "favicon.png"
+  }
+}
