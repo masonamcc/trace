@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Timeline from "./components/Timeline";
 import Summary from "./components/Summary";
@@ -28,6 +28,17 @@ const CLEAR_RANGES = [
 ];
 
 const AUTO_CLEAR_OPTIONS = [{ label: "Off", minutes: 0 }, ...CLEAR_RANGES];
+
+const POST_INTERVALS = [
+  { label: "30 minutes", minutes: 30 },
+  { label: "1 hour",     minutes: 60 },
+  { label: "2 hours",    minutes: 120 },
+  { label: "4 hours",    minutes: 240 },
+  { label: "6 hours",    minutes: 360 },
+  { label: "8 hours",    minutes: 480 },
+  { label: "12 hours",   minutes: 720 },
+  { label: "Daily",      minutes: 1440 },
+];
 
 const EXCLUSION_CATEGORIES = [
   {
@@ -112,7 +123,7 @@ export default function App() {
   );
 
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"ai" | "privacy" | "data">("ai");
+  const [settingsTab, setSettingsTab] = useState<"ai" | "privacy" | "data" | "social">("ai");
 
   const [clearMenu, setClearMenu] = useState(false);
   const [clearConfirm, setClearConfirm] = useState<{ label: string; minutes: number } | null>(null);
@@ -128,6 +139,24 @@ export default function App() {
   const [scheduleEnd, setScheduleEnd] = useState(
     () => localStorage.getItem("trace_schedule_end") ?? ""
   );
+
+  // X / social
+  const [xClientId,          setXClientId]          = useState(() => localStorage.getItem("trace_x_cid") ?? "");
+  const [xClientSecret,      setXClientSecret]      = useState(() => localStorage.getItem("trace_x_cse") ?? "");
+  const [xBearerToken,       setXBearerToken]       = useState(() => localStorage.getItem("trace_x_bt")  ?? "");
+  const [xConsumerKey,       setXConsumerKey]       = useState(() => localStorage.getItem("trace_x_ck")  ?? "");
+  const [xConsumerSecret,    setXConsumerSecret]    = useState(() => localStorage.getItem("trace_x_cs")  ?? "");
+  const [xAccessToken,       setXAccessToken]       = useState(() => localStorage.getItem("trace_x_at")  ?? "");
+  const [xAccessTokenSecret, setXAccessTokenSecret] = useState(() => localStorage.getItem("trace_x_ats") ?? "");
+  const [xAutoPost,          setXAutoPost]          = useState(() => localStorage.getItem("trace_x_auto") === "true");
+  const [xIntervalMinutes,   setXIntervalMinutes]   = useState(() => Number(localStorage.getItem("trace_x_interval") ?? "60"));
+  const [xRequireReview,     setXRequireReview]     = useState(() => localStorage.getItem("trace_x_review") !== "false");
+  const [pendingText,        setPendingText]        = useState("");
+  const [showReview,         setShowReview]         = useState(false);
+  const [xPosting,           setXPosting]           = useState(false);
+  const [xPostError,         setXPostError]         = useState("");
+  const [xPostSuccess,       setXPostSuccess]       = useState(false);
+  const pendingRef = useRef(false); // prevents concurrent auto-posts
 
   // Exclusions
   const [activeCategories, setActiveCategories] = useState<Set<CategoryId>>(
@@ -148,6 +177,7 @@ export default function App() {
 
   const currentProvider = PROVIDERS.find((p) => p.id === provider)!;
   const currentKey = apiKeys[provider] ?? "";
+  const xCredentialsOk = !!(xConsumerKey && xConsumerSecret && xAccessToken && xAccessTokenSecret);
 
   // ── Effects ──────────────────────────────────────────────────────────────────
 
@@ -193,6 +223,32 @@ export default function App() {
   }, [autoClearMinutes]);
 
   useEffect(() => {
+    if (!xAutoPost || !xCredentialsOk || !currentKey) return;
+    const id = setInterval(async () => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      try {
+        const cards = await invoke<string[]>("get_daily_summary", {
+          date: todayStr(), apiKey: currentKey, style: summaryStyle, provider,
+        });
+        if (!cards.length) return;
+        const text = cards[0];
+        if (xRequireReview) {
+          setPendingText(text);
+          setShowReview(true);
+          pendingRef.current = false;
+        } else {
+          await doPost(text);
+        }
+      } catch {
+        pendingRef.current = false;
+      }
+    }, xIntervalMinutes * 60 * 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xAutoPost, xIntervalMinutes, xRequireReview, xCredentialsOk, currentKey, summaryStyle, provider]);
+
+  useEffect(() => {
     const patterns: string[] = [];
     for (const cat of EXCLUSION_CATEGORIES) {
       if (!activeCategories.has(cat.id)) continue;
@@ -206,6 +262,57 @@ export default function App() {
   }, [activeCategories, categoryAdditions, categoryRemovals]);
 
   // ── Actions ──────────────────────────────────────────────────────────────────
+
+  async function doPost(text: string) {
+    setXPosting(true);
+    setXPostError("");
+    try {
+      await invoke("post_to_x", {
+        text,
+        consumerKey: xConsumerKey,
+        consumerSecret: xConsumerSecret,
+        accessToken: xAccessToken,
+        accessTokenSecret: xAccessTokenSecret,
+      });
+      setShowReview(false);
+      setXPostSuccess(true);
+      setTimeout(() => setXPostSuccess(false), 3000);
+    } catch (e) {
+      setXPostError(String(e));
+    } finally {
+      setXPosting(false);
+      pendingRef.current = false;
+    }
+  }
+
+  async function handlePostCard(text: string): Promise<"posted" | "queued"> {
+    if (!xCredentialsOk) {
+      setShowSettings(true);
+      setSettingsTab("social");
+      throw new Error("No X credentials — add them in Settings → Social.");
+    }
+    setPendingText(text);
+    setXPostError("");
+    if (xRequireReview) {
+      setShowReview(true);
+      return "queued";
+    }
+    pendingRef.current = true;
+    try {
+      await invoke("post_to_x", {
+        text,
+        consumerKey: xConsumerKey,
+        consumerSecret: xConsumerSecret,
+        accessToken: xAccessToken,
+        accessTokenSecret: xAccessTokenSecret,
+      });
+      pendingRef.current = false;
+      return "posted";
+    } catch (e) {
+      pendingRef.current = false;
+      throw e;
+    }
+  }
 
   async function generateSummary() {
     if (!currentKey) { setShowSettings(true); return; }
@@ -237,6 +344,19 @@ export default function App() {
   }
   function saveAutoClear(m: number) {
     setAutoClearMinutes(m); localStorage.setItem("trace_auto_clear", String(m));
+  }
+
+  function saveXField(key: string, setter: (v: string) => void, val: string) {
+    setter(val); localStorage.setItem(key, val);
+  }
+  function saveXAutoPost(val: boolean) {
+    setXAutoPost(val); localStorage.setItem("trace_x_auto", String(val));
+  }
+  function saveXInterval(val: number) {
+    setXIntervalMinutes(val); localStorage.setItem("trace_x_interval", String(val));
+  }
+  function saveXRequireReview(val: boolean) {
+    setXRequireReview(val); localStorage.setItem("trace_x_review", String(val));
   }
 
   function togglePause() {
@@ -336,13 +456,13 @@ export default function App() {
       {showSettings && (
         <div style={styles.settingsPanel}>
           <div style={styles.settingsTabs}>
-            {(["ai", "privacy", "data"] as const).map((tab) => (
+            {(["ai", "privacy", "data", "social"] as const).map((tab) => (
               <button
                 key={tab}
                 style={{ ...styles.settingsTab, ...(settingsTab === tab ? styles.settingsTabActive : {}) }}
                 onClick={() => setSettingsTab(tab)}
               >
-                {{ ai: "AI", privacy: "Privacy", data: "Data" }[tab]}
+                {{ ai: "AI", privacy: "Privacy", data: "Data", social: "Social" }[tab]}
               </button>
             ))}
           </div>
@@ -503,6 +623,78 @@ export default function App() {
             </div>
           )}
 
+          {/* ── Social tab ── */}
+          {settingsTab === "social" && (
+            <div style={styles.tabContent}>
+              <p style={styles.tabHint}>
+                Post activity summaries to X. Requires a developer app at developer.x.com with Read &amp; Write permissions. Generate access tokens for your own account in the developer portal.
+              </p>
+
+              {([
+                { label: "Client ID",             storageKey: "trace_x_cid", value: xClientId,             setter: setXClientId },
+                { label: "Client Secret",         storageKey: "trace_x_cse", value: xClientSecret,         setter: setXClientSecret },
+                { label: "Bearer Token",          storageKey: "trace_x_bt",  value: xBearerToken,          setter: setXBearerToken },
+                { label: "Consumer Key",          storageKey: "trace_x_ck",  value: xConsumerKey,          setter: setXConsumerKey },
+                { label: "Consumer Secret",       storageKey: "trace_x_cs",  value: xConsumerSecret,       setter: setXConsumerSecret },
+                { label: "Access Token",          storageKey: "trace_x_at",  value: xAccessToken,          setter: setXAccessToken },
+                { label: "Access Token Secret",   storageKey: "trace_x_ats", value: xAccessTokenSecret,    setter: setXAccessTokenSecret },
+              ] as const).map(({ label, storageKey, value, setter }) => (
+                <div key={storageKey} style={styles.settingsRow}>
+                  <span style={styles.settingsLabel}>{label}</span>
+                  <input
+                    style={styles.settingsInput}
+                    type="password"
+                    value={value}
+                    onChange={(e) => saveXField(storageKey, setter as (v: string) => void, e.target.value)}
+                  />
+                </div>
+              ))}
+
+              <div style={styles.settingsRow}>
+                <span style={styles.settingsLabel}>Auto-post</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <button
+                    style={{ ...styles.toggle, ...(xAutoPost ? styles.toggleOn : {}) }}
+                    onClick={() => saveXAutoPost(!xAutoPost)}
+                  >
+                    <span style={{ ...styles.toggleThumb, ...(xAutoPost ? styles.toggleThumbOn : {}) }} />
+                  </button>
+                  {xAutoPost && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={styles.autoClearHint}>Post every</span>
+                      <select
+                        style={{ ...styles.select, width: "auto" }}
+                        value={xIntervalMinutes}
+                        onChange={(e) => saveXInterval(Number(e.target.value))}
+                      >
+                        {POST_INTERVALS.map((o) => (
+                          <option key={o.minutes} value={o.minutes}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={styles.settingsRow}>
+                <span style={styles.settingsLabel}>Require review</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <button
+                    style={{ ...styles.toggle, ...(xRequireReview ? styles.toggleOn : {}) }}
+                    onClick={() => saveXRequireReview(!xRequireReview)}
+                  >
+                    <span style={{ ...styles.toggleThumb, ...(xRequireReview ? styles.toggleThumbOn : {}) }} />
+                  </button>
+                  <span style={styles.autoClearHint}>
+                    {xRequireReview
+                      ? "You'll approve each post before it goes live."
+                      : "Trace posts automatically without approval."}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <button style={styles.doneBtn} onClick={() => setShowSettings(false)}>Done</button>
         </div>
       )}
@@ -565,7 +757,12 @@ export default function App() {
         {(summary.length > 0 || summaryLoading) && (
           <section style={styles.section}>
             <h2 style={styles.sectionTitle}>Summary</h2>
-            <Summary cards={summary} loading={summaryLoading} />
+            <Summary
+              cards={summary}
+              loading={summaryLoading}
+              onPost={handlePostCard}
+              xEnabled={true}
+            />
           </section>
         )}
 
@@ -580,12 +777,51 @@ export default function App() {
         </section>
       </main>
 
+      {/* ── Review modal ── */}
+      {showReview && (
+        <div style={styles.modalBackdrop}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Review post</h3>
+            <div style={styles.charCount} data-over={pendingText.length > 280}>
+              {pendingText.length} / 280
+            </div>
+            <textarea
+              style={{ ...styles.styleInput, minHeight: 100, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+              value={pendingText}
+              onChange={(e) => setPendingText(e.target.value)}
+            />
+            {xPostError && <div style={styles.xError}>{xPostError}</div>}
+            <div style={styles.modalBtns}>
+              <button
+                style={styles.confirmCancel}
+                onClick={() => { setShowReview(false); setXPostError(""); pendingRef.current = false; }}
+              >
+                Skip
+              </button>
+              <button
+                style={{ ...styles.btn, ...styles.btnAccent }}
+                disabled={xPosting || pendingText.length === 0 || pendingText.length > 280}
+                onClick={() => doPost(pendingText)}
+              >
+                {xPosting ? "Posting…" : "Post to X"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Success toast ── */}
+      {xPostSuccess && (
+        <div style={styles.successToast}>Posted to X</div>
+      )}
+
       <style>{`
         @keyframes spin  { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         [data-type="desktop"] { background: var(--desktop-dim); color: var(--desktop); }
         [data-type="browser"] { background: var(--browser-dim); color: var(--browser); }
         button:disabled { opacity: 0.45; cursor: default; }
+        [data-over="true"] { color: #ef4444 !important; }
       `}</style>
     </div>
   );
@@ -798,6 +1034,30 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#2a0a0a", border: "1px solid #5a1a1a",
     borderRadius: 6, color: "#f87171", padding: "10px 14px", fontSize: 13,
   },
+  modalBackdrop: {
+    position: "fixed", inset: 0, zIndex: 50,
+    background: "rgba(0,0,0,0.6)", display: "flex",
+    alignItems: "center", justifyContent: "center",
+  } as React.CSSProperties,
+  modal: {
+    background: "var(--surface-2)", border: "1px solid var(--border)",
+    borderRadius: 12, padding: 24, width: 420, maxWidth: "90vw",
+    display: "flex", flexDirection: "column", gap: 14,
+    boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+  } as React.CSSProperties,
+  modalTitle: { fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 },
+  charCount: { fontSize: 11, color: "var(--text-muted)", textAlign: "right" } as React.CSSProperties,
+  modalBtns: { display: "flex", gap: 8, justifyContent: "flex-end" },
+  xError: {
+    background: "#2a0a0a", border: "1px solid #5a1a1a",
+    borderRadius: 6, color: "#f87171", padding: "8px 12px", fontSize: 12,
+  },
+  successToast: {
+    position: "fixed", bottom: 24, right: 24, zIndex: 60,
+    background: "#14532d", border: "1px solid #166534",
+    borderRadius: 8, color: "#86efac", padding: "10px 18px",
+    fontSize: 13, fontWeight: 500, boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+  } as React.CSSProperties,
   section: { display: "flex", flexDirection: "column", gap: 14 },
   sectionTitle: {
     fontSize: 13, fontWeight: 600, color: "var(--text-muted)",

@@ -1,9 +1,14 @@
+use base64::Engine;
 use chrono::Timelike;
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
 use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
 };
+
+type HmacSha1 = Hmac<Sha1>;
 
 mod db;
 mod server;
@@ -86,6 +91,89 @@ async fn get_daily_summary(
         "mistral" => call_openai_compat(&prompt, &api_key, "https://api.mistral.ai/v1", "mistral-small-latest").await,
         _         => call_anthropic(&prompt, &api_key).await,
     }
+}
+
+// ── X / Twitter ───────────────────────────────────────────────────────────────
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+fn oauth_sign(method: &str, url: &str, params: &[(&str, &str)], consumer_secret: &str, token_secret: &str) -> String {
+    let mut sorted = params.to_vec();
+    sorted.sort_by_key(|(k, _)| *k);
+    let param_string = sorted.iter()
+        .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let base = format!("{}&{}&{}", percent_encode(method), percent_encode(url), percent_encode(&param_string));
+    let key = format!("{}&{}", percent_encode(consumer_secret), percent_encode(token_secret));
+    let mut mac = HmacSha1::new_from_slice(key.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(base.as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
+}
+
+#[tauri::command]
+async fn post_to_x(
+    text: String,
+    consumer_key: String,
+    consumer_secret: String,
+    access_token: String,
+    access_token_secret: String,
+) -> Result<(), String> {
+    use rand::Rng;
+    let consumer_key      = consumer_key.trim().to_string();
+    let consumer_secret   = consumer_secret.trim().to_string();
+    let access_token      = access_token.trim().to_string();
+    let access_token_secret = access_token_secret.trim().to_string();
+    let url = "https://api.x.com/2/tweets";
+    let nonce: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .to_string();
+
+    let params = [
+        ("oauth_consumer_key",    consumer_key.as_str()),
+        ("oauth_nonce",           nonce.as_str()),
+        ("oauth_signature_method","HMAC-SHA1"),
+        ("oauth_timestamp",       timestamp.as_str()),
+        ("oauth_token",           access_token.as_str()),
+        ("oauth_version",         "1.0"),
+    ];
+    let sig = oauth_sign("POST", url, &params, &consumer_secret, &access_token_secret);
+
+    let auth = format!(
+        "OAuth oauth_consumer_key=\"{}\",oauth_nonce=\"{}\",oauth_signature=\"{}\",oauth_signature_method=\"HMAC-SHA1\",oauth_timestamp=\"{}\",oauth_token=\"{}\",oauth_version=\"1.0\"",
+        percent_encode(&consumer_key), percent_encode(&nonce),
+        percent_encode(&sig), &timestamp, percent_encode(&access_token),
+    );
+
+    let resp = reqwest::Client::new()
+        .post(url)
+        .header("Authorization", auth)
+        .json(&serde_json::json!({ "text": text }))
+        .send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("X API error: {}", body));
+    }
+    Ok(())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -228,6 +316,7 @@ pub fn run() {
             clear_recent, clear_older_than,
             set_exclusions,
             set_tracking_paused, set_tracking_schedule,
+            post_to_x,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,7 +11,15 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git branch *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(npx tsc *)",
+      "Bash(cargo check *)",
+      "WebFetch(domain:docs.x.com)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(taskkill //PID 16724 //F)",
+      "Bash(taskkill //PID 26460 //F)",
+      "Bash(taskkill //PID 30636 //F)"
     ]
   }
 }

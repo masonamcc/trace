@@ -1,6 +1,10 @@
+import { useState, useEffect } from "react";
+
 interface Props {
   cards: string[];
   loading: boolean;
+  onPost?: (text: string) => Promise<"posted" | "queued">;
+  xEnabled?: boolean;
 }
 
 const CARD_ACCENTS = [
@@ -9,7 +13,46 @@ const CARD_ACCENTS = [
   { border: "#7c3aed", glow: "rgba(124,58,237,0.12)" },
 ];
 
-export default function Summary({ cards, loading }: Props) {
+const X_LIMIT = 280;
+
+type CardStatus =
+  | { type: "idle" }
+  | { type: "posting" }
+  | { type: "success" }
+  | { type: "queued" }
+  | { type: "error"; message: string };
+
+export default function Summary({ cards, loading, onPost, xEnabled }: Props) {
+  const [texts, setTexts] = useState<string[]>(cards);
+  const [statuses, setStatuses] = useState<CardStatus[]>(cards.map(() => ({ type: "idle" })));
+
+  useEffect(() => {
+    setTexts(cards);
+    setStatuses(cards.map(() => ({ type: "idle" })));
+  }, [cards]);
+
+  function setStatus(index: number, status: CardStatus) {
+    setStatuses((prev) => prev.map((s, i) => (i === index ? status : s)));
+  }
+
+  async function handlePost(text: string, index: number) {
+    if (!onPost) return;
+    setStatus(index, { type: "posting" });
+    try {
+      const result = await onPost(text);
+      if (result === "queued") {
+        setStatus(index, { type: "queued" });
+        setTimeout(() => setStatus(index, { type: "idle" }), 2000);
+      } else {
+        setStatus(index, { type: "success" });
+        setTimeout(() => setStatus(index, { type: "idle" }), 3000);
+      }
+    } catch (e) {
+      setStatus(index, { type: "error", message: String(e) });
+      setTimeout(() => setStatus(index, { type: "idle" }), 6000);
+    }
+  }
+
   if (loading) {
     return (
       <div style={styles.grid}>
@@ -28,8 +71,12 @@ export default function Summary({ cards, loading }: Props) {
 
   return (
     <div style={styles.grid}>
-      {cards.map((text, i) => {
+      {texts.map((text, i) => {
         const accent = CARD_ACCENTS[i % CARD_ACCENTS.length];
+        const over = text.length > X_LIMIT;
+        const status = statuses[i] ?? { type: "idle" };
+        const busy = status.type === "posting";
+
         return (
           <div
             key={i}
@@ -39,14 +86,54 @@ export default function Summary({ cards, loading }: Props) {
               boxShadow: `0 0 0 1px ${accent.border}22, 0 4px 24px ${accent.glow}`,
             }}
           >
-            <p style={styles.text}>{text}</p>
-            <button
-              style={styles.copy}
-              onClick={() => navigator.clipboard.writeText(text)}
-              title="Copy to clipboard"
-            >
-              Copy
-            </button>
+            <textarea
+              style={styles.textarea}
+              value={text}
+              onChange={(e) => {
+                const next = [...texts];
+                next[i] = e.target.value;
+                setTexts(next);
+              }}
+              rows={5}
+            />
+
+            {status.type === "error" && (
+              <div style={styles.errorBanner}>{status.message}</div>
+            )}
+
+            <div style={styles.footer}>
+              <span style={{ ...styles.counter, ...(over ? styles.counterOver : {}) }}>
+                {text.length} / {X_LIMIT}
+              </span>
+              <div style={styles.actions}>
+                <button
+                  style={styles.actionBtn}
+                  onClick={() => navigator.clipboard.writeText(text)}
+                >
+                  Copy
+                </button>
+                {xEnabled && onPost && (
+                  <button
+                    style={{
+                      ...styles.actionBtn,
+                      ...styles.postBtn,
+                      ...(status.type === "success" ? styles.postBtnSuccess : {}),
+                      ...(status.type === "queued"  ? styles.postBtnQueued  : {}),
+                      ...(status.type === "error"   ? styles.postBtnError   : {}),
+                      ...((busy || over)            ? styles.postBtnDisabled : {}),
+                    }}
+                    disabled={busy || over}
+                    onClick={() => handlePost(text, i)}
+                  >
+                    {status.type === "posting" && "Posting…"}
+                    {status.type === "success" && "✓ Posted"}
+                    {status.type === "queued"  && "Queued"}
+                    {status.type === "error"   && "Failed"}
+                    {status.type === "idle"    && "Post to X"}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         );
       })}
@@ -64,20 +151,45 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--surface-2)",
     border: "1px solid var(--border)",
     borderRadius: 10,
-    padding: "18px 18px 12px",
+    padding: "14px 14px 10px",
     display: "flex",
     flexDirection: "column",
-    gap: 12,
+    gap: 10,
     transition: "box-shadow 0.2s",
   },
-  text: {
+  textarea: {
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    resize: "vertical",
+    color: "var(--text)",
     fontSize: 14,
     lineHeight: 1.65,
-    color: "var(--text)",
-    flex: 1,
+    fontFamily: "inherit",
+    width: "100%",
+    padding: 0,
+    minHeight: 80,
+  } as React.CSSProperties,
+  errorBanner: {
+    background: "#2a0a0a",
+    border: "1px solid #5a1a1a",
+    borderRadius: 6,
+    color: "#f87171",
+    padding: "7px 10px",
+    fontSize: 12,
+    lineHeight: 1.4,
+    wordBreak: "break-word",
+  } as React.CSSProperties,
+  footer: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
-  copy: {
-    alignSelf: "flex-end",
+  counter: { fontSize: 11, color: "var(--text-muted)", flexShrink: 0 },
+  counterOver: { color: "#ef4444", fontWeight: 600 },
+  actions: { display: "flex", gap: 6 },
+  actionBtn: {
     background: "none",
     border: "1px solid var(--border)",
     borderRadius: 5,
@@ -86,10 +198,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "3px 10px",
     cursor: "pointer",
   },
-  skeleton: {
-    gap: 10,
-    pointerEvents: "none",
-  },
+  postBtn: { borderColor: "rgba(29,161,242,0.4)", color: "#1da1f2" },
+  postBtnSuccess: { borderColor: "rgba(34,197,94,0.4)", color: "#22c55e" },
+  postBtnQueued:  { borderColor: "rgba(234,179,8,0.4)",  color: "#eab308" },
+  postBtnError:   { borderColor: "rgba(239,68,68,0.4)",  color: "#ef4444" },
+  postBtnDisabled: { opacity: 0.45, cursor: "not-allowed" },
+  skeleton: { gap: 10, pointerEvents: "none" },
   skeletonLine: {
     height: 13,
     borderRadius: 4,

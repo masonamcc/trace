@@ -1,0 +1,44 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # 👈 THIS is the missing piece
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 1️⃣ Install frontend deps
+      - name: Install frontend dependencies
+        run: npm install
+
+      # 2️⃣ Build frontend
+      - name: Build frontend
+        run: npm run build
+
+      # 3️⃣ Build + release Tauri app
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: src-tauri
+          distPath: ../build
+          tagName: ${{ github.ref_name }}
+          releaseName: CodeStash ${{ github.ref_name }}
+          releaseBody: "Automated release"
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
