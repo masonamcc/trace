@@ -105,7 +105,7 @@ function loadJson<T>(key: string, fallback: T): T {
 
 export default function App() {
   const [date, setDate] = useState(todayStr());
-  const [events, setEvents] = useState<Event[]>([]);
+  const [eventsByDate, setEventsByDate] = useState<Record<string, Event[]>>({});
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<string[]>([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -204,21 +204,31 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      setEvents(await invoke<Event[]>("get_events", { date }));
+      const days: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().slice(0, 10));
+      }
+      const results = await Promise.all(days.map((d) => invoke<Event[]>("get_events", { date: d })));
+      const map: Record<string, Event[]> = {};
+      days.forEach((d, i) => { if (results[i].length > 0) map[d] = results[i]; });
+      setEventsByDate(map);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, []);
 
-  useEffect(() => { setSummary([]); fetchEvents(); }, [fetchEvents]);
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  useEffect(() => { setSummary([]); }, [date]);
 
   useEffect(() => {
-    if (date !== todayStr()) return;
     const id = setInterval(fetchEvents, 30_000);
     return () => clearInterval(id);
-  }, [date, fetchEvents]);
+  }, [fetchEvents]);
 
   // Sync pause state to Rust on mount and change
   useEffect(() => {
@@ -515,8 +525,9 @@ export default function App() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const desktopCount = events.filter((e) => e.source === "desktop").length;
-  const browserCount = events.filter((e) => e.source === "chrome").length;
+  const todayEvents = eventsByDate[todayStr()] ?? [];
+  const desktopCount = todayEvents.filter((e) => e.source === "desktop").length;
+  const browserCount = todayEvents.filter((e) => e.source === "chrome").length;
   const activeExclCount = activeCategories.size;
 
   return (
@@ -908,7 +919,7 @@ export default function App() {
             )}
           </div>
 
-          <button onClick={generateSummary} disabled={summaryLoading || events.length === 0}
+          <button onClick={generateSummary} disabled={summaryLoading || todayEvents.length === 0}
             style={{ ...styles.btn, ...styles.btnDarkAccent, marginLeft: "auto" }}>
             {summaryLoading ? "Generating…" : "Generate Summary"}
           </button>
@@ -916,13 +927,8 @@ export default function App() {
 
         {error && <div style={styles.error}>{error}</div>}
 
-        {xCredentialsOk && (
-          <section style={{
-            ...styles.section,
-            opacity: summary.length > 0 || summaryLoading ? 0 : 1,
-            pointerEvents: summary.length > 0 || summaryLoading ? "none" : "auto",
-            transition: "opacity 0.35s ease",
-          } as React.CSSProperties}>
+        {xCredentialsOk && !(summary.length > 0 || summaryLoading) && (
+          <section style={styles.section}>
             <h2 style={styles.sectionTitle}>Compose</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <textarea
@@ -976,13 +982,8 @@ export default function App() {
         )}
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>
-            Activity —{" "}
-            {new Date(date + "T12:00:00").toLocaleDateString([], {
-              weekday: "long", month: "long", day: "numeric",
-            })}
-          </h2>
-          <Timeline events={events} />
+          <h2 style={styles.sectionTitle}>Activity</h2>
+          <Timeline eventsByDate={eventsByDate} today={todayStr()} />
         </section>
       </main>
 
