@@ -510,47 +510,44 @@ export default function App() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div style={styles.root}>
+    <div className="root">
       {splashVisible && <SplashScreen fading={splashFading} />}
-      <header style={styles.header}>
+      <header className="header">
         <div style={{display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '.5rem'}}>
           <img src={logo} alt={''} style={{height: 30}} />
           <h2>Trace</h2>
         </div>
 
-        <div style={styles.headerRight}>
+        <div className="headerRight">
           {activeExclCount > 0 && (
-            <span style={styles.shieldBadge} title={`${activeExclCount} exclusion group(s) active`}>
+            <span className="shieldBadge" title={`${activeExclCount} exclusion group(s) active`}>
               🛡 {activeExclCount}
             </span>
           )}
-          <div style={styles.activeProvider}>
+          <div className="activeProvider">
             {currentProvider.company} · {currentProvider.model}
           </div>
           <button
-            style={{ ...styles.trackingPill, ...(isPaused ? styles.trackingPillPaused : {}) }}
+            className={`trackingPill${isPaused ? ' trackingPillPaused' : ''}`}
             onClick={togglePause}
             title={isPaused ? "Click to resume tracking" : "Click to pause tracking"}
           >
-            <span style={{
-              ...styles.trackingDot,
-              background: isPaused ? "#ef4444" : "#22c55e",
-            }} />
+            <span className="trackingDot" style={{background: isPaused ? "#ef4444" : "#22c55e"}} />
             {isPaused ? "Paused" : "Tracking"}
           </button>
-          <button style={styles.settingsBtn} onClick={() => setShowSettings((prev) => !prev)}>
+          <button className="settingsBtn" onClick={() => setShowSettings((prev) => !prev)}>
             Settings
           </button>
         </div>
       </header>
 
       {showSettings && (
-        <div style={styles.settingsPanel}>
-          <div style={styles.settingsTabs}>
+        <div className="settingsPanel">
+          <div className="settingsTabs">
             {["ai", "privacy", "data", "social"].map((tab) => (
               <button
                 key={tab}
-                style={{ ...styles.settingsTab, ...(settingsTab === tab ? styles.settingsTabActive : {}) }}
+                className={`settingsTab${settingsTab === tab ? ' settingsTabActive' : ''}`}
                 onClick={() => setSettingsTab(tab)}
               >
                 {{ ai: "AI", privacy: "Privacy", data: "Data", social: "Social" }[tab]}
@@ -559,28 +556,28 @@ export default function App() {
           </div>
 
           {settingsTab === "ai" && (
-            <div style={styles.tabContent}>
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Provider</span>
-                <div style={styles.providerTabs}>
+            <div className="tabContent">
+              <div className="settingsRow">
+                <span className="settingsLabel">Provider</span>
+                <div className="providerTabs">
                   {PROVIDERS.map((providerOption) => (
                     <button key={providerOption.id} onClick={() => saveProvider(providerOption.id)}
-                      style={{ ...styles.providerTab, ...(providerOption.id === provider ? styles.providerTabActive : {}) }}>
+                      className={`providerTab${providerOption.id === provider ? ' providerTabActive' : ''}`}>
                       {providerOption.company}
-                      {apiKeys[providerOption.id] && <span style={styles.keyDot} />}
+                      {apiKeys[providerOption.id] && <span className="keyDot" />}
                     </button>
                   ))}
                 </div>
               </div>
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>API key</span>
-                <input style={styles.settingsInput} type="password"
+              <div className="settingsRow">
+                <span className="settingsLabel">API key</span>
+                <input className="settingsInput" type="password"
                   placeholder={currentProvider.placeholder} value={currentKey}
                   onChange={(e) => saveKey(provider, e.target.value)} />
               </div>
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Summary style</span>
-                <textarea style={styles.styleInput} rows={4} value={summaryStyle}
+              <div className="settingsRow">
+                <span className="settingsLabel">Summary style</span>
+                <textarea className="styleInput" rows={4} value={summaryStyle}
                   placeholder={"How should the summary be written?\n\nExamples:\n• Write like a dev journal — terse, technical, first person.\n• Bullet points only, no prose."}
                   onChange={(e) => saveSummaryStyle(e.target.value)} />
               </div>
@@ -588,8 +585,8 @@ export default function App() {
           )}
 
           {settingsTab === "privacy" && (
-            <div style={styles.tabContent}>
-              <p style={styles.tabHint}>
+            <div className="tabContent">
+              <p className="tabHint">
                 Excluded domains are dropped at ingestion — never written to the database.
                 Toggle a group on/off, expand to edit its domain list, or add your own.
               </p>
@@ -603,42 +600,43 @@ export default function App() {
                 const totalCount = visibleDefaults.length + additions.length;
 
                 return (
-                  <div key={cat.id} style={styles.catBlock}>
-                    <div style={styles.catHeader}>
-                      <button style={styles.expandArrow} onClick={() => toggleExpand(cat.id)}>
+                  <div key={cat.id} className="catBlock">
+                    <div className="catHeader">
+                      <button className="expandArrow" onClick={() => toggleExpand(cat.id)}>
                         {isExpanded ? "▾" : "▸"}
                       </button>
-                      <span style={styles.catIcon}>{cat.icon}</span>
-                      <span style={styles.catLabel}>{cat.label}</span>
-                      <span style={styles.catCount}>{totalCount} domains</span>
+                      <span className="catIcon">{cat.icon}</span>
+                      <span className="catLabel">{cat.label}</span>
+                      <span className="catCount">{totalCount} domains</span>
                       <button
-                        style={{ ...styles.toggle, ...(isEnabled ? styles.toggleOn : {}), marginLeft: "auto" }}
+                        className={`toggle${isEnabled ? ' toggleOn' : ''}`}
+                        style={{marginLeft: "auto"}}
                         onClick={() => toggleCategory(cat.id)}
                       >
-                        <span style={{ ...styles.toggleThumb, ...(isEnabled ? styles.toggleThumbOn : {}) }} />
+                        <span className={`toggleThumb${isEnabled ? ' toggleThumbOn' : ''}`} />
                       </button>
                     </div>
 
                     {isExpanded && (
-                      <div style={styles.catBody}>
-                        <div style={styles.domainGrid}>
+                      <div className="catBody">
+                        <div className="domainGrid">
                           {visibleDefaults.map((domain) => (
-                            <span key={domain} style={styles.chipDefault}>
+                            <span key={domain} className="chipDefault">
                               {domain}
-                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, domain, "default")} title="Remove">×</button>
+                              <button className="chipX" onClick={() => removeDomain(cat.id, domain, "default")} title="Remove">×</button>
                             </span>
                           ))}
                           {additions.map((domain) => (
-                            <span key={domain} style={styles.chipAdded}>
+                            <span key={domain} className="chipAdded">
                               {domain}
-                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, domain, "added")} title="Remove">×</button>
+                              <button className="chipX" onClick={() => removeDomain(cat.id, domain, "added")} title="Remove">×</button>
                             </span>
                           ))}
                         </div>
 
-                        <div style={styles.addRow}>
+                        <div className="addRow">
                           <input
-                            style={styles.domainInput}
+                            className="domainInput"
                             placeholder="Add domain, e.g. mint.com"
                             value={categoryInputs[cat.id] ?? ""}
                             onChange={(e) =>
@@ -646,7 +644,7 @@ export default function App() {
                             }
                             onKeyDown={(e) => e.key === "Enter" && addDomain(cat.id)}
                           />
-                          <button style={styles.addBtn} onClick={() => addDomain(cat.id)}>Add</button>
+                          <button className="addBtn" onClick={() => addDomain(cat.id)}>Add</button>
                         </div>
                       </div>
                     )}
@@ -657,17 +655,17 @@ export default function App() {
           )}
 
           {settingsTab === "data" && (
-            <div style={styles.tabContent}>
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Auto-clear</span>
-                <div style={styles.autoClearGroup}>
-                  <select style={styles.select} value={autoClearMinutes}
+            <div className="tabContent">
+              <div className="settingsRow">
+                <span className="settingsLabel">Auto-clear</span>
+                <div className="autoClearGroup">
+                  <select className="appSelect" value={autoClearMinutes}
                     onChange={(e) => saveAutoClear(Number(e.target.value))}>
                     {AUTO_CLEAR_OPTIONS.map((option) => (
                       <option key={option.minutes} value={option.minutes}>{option.label}</option>
                     ))}
                   </select>
-                  <span style={styles.autoClearHint}>
+                  <span className="autoClearHint">
                     {autoClearMinutes === 0
                       ? "History is kept indefinitely."
                       : `Data older than ${AUTO_CLEAR_OPTIONS.find((option) => option.minutes === autoClearMinutes)?.label} is deleted automatically.`}
@@ -675,31 +673,31 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Schedule</span>
-                <div style={styles.scheduleGroup}>
-                  <div style={styles.scheduleInputRow}>
-                    <span style={styles.scheduleLabel}>From</span>
+              <div className="settingsRow">
+                <span className="settingsLabel">Schedule</span>
+                <div className="scheduleGroup">
+                  <div className="scheduleInputRow">
+                    <span className="scheduleLabel">From</span>
                     <input
                       type="time"
-                      style={styles.timeInput}
+                      className="timeInput"
                       value={scheduleStart}
                       onChange={(e) => saveSchedule(e.target.value, scheduleEnd)}
                     />
-                    <span style={styles.scheduleLabel}>to</span>
+                    <span className="scheduleLabel">to</span>
                     <input
                       type="time"
-                      style={styles.timeInput}
+                      className="timeInput"
                       value={scheduleEnd}
                       onChange={(e) => saveSchedule(scheduleStart, e.target.value)}
                     />
                     {(scheduleStart || scheduleEnd) && (
-                      <button style={styles.clearScheduleBtn} onClick={() => saveSchedule("", "")}>
+                      <button className="clearScheduleBtn" onClick={() => saveSchedule("", "")}>
                         Clear
                       </button>
                     )}
                   </div>
-                  <span style={styles.autoClearHint}>
+                  <span className="autoClearHint">
                     {scheduleStart && scheduleEnd
                       ? `Only track between ${scheduleStart} and ${scheduleEnd}.`
                       : "No schedule — tracking runs whenever the app is open."}
@@ -710,8 +708,8 @@ export default function App() {
           )}
 
           {settingsTab === "social" && (
-            <div style={styles.tabContent}>
-              <p style={styles.tabHint}>
+            <div className="tabContent">
+              <p className="tabHint">
                 Post activity summaries to X. Requires a developer app at developer.x.com with Read &amp; Write permissions. Generate access tokens for your own account in the developer portal.
               </p>
 
@@ -724,10 +722,10 @@ export default function App() {
                 { label: "Access Token",        storageKey: "trace_x_at",  value: xAccessToken,          setter: setXAccessToken },
                 { label: "Access Token Secret", storageKey: "trace_x_ats", value: xAccessTokenSecret,    setter: setXAccessTokenSecret },
               ]).map(({ label, storageKey, value, setter }) => (
-                <div key={storageKey} style={styles.settingsRow}>
-                  <span style={styles.settingsLabel}>{label}</span>
+                <div key={storageKey} className="settingsRow">
+                  <span className="settingsLabel">{label}</span>
                   <input
-                    style={styles.settingsInput}
+                    className="settingsInput"
                     type="password"
                     value={value}
                     onChange={(e) => saveXField(storageKey, setter, e.target.value)}
@@ -735,20 +733,21 @@ export default function App() {
                 </div>
               ))}
 
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Auto-post</span>
+              <div className="settingsRow">
+                <span className="settingsLabel">Auto-post</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <button
-                    style={{ ...styles.toggle, ...(xAutoPost ? styles.toggleOn : {}) }}
+                    className={`toggle${xAutoPost ? ' toggleOn' : ''}`}
                     onClick={() => saveXAutoPost(!xAutoPost)}
                   >
-                    <span style={{ ...styles.toggleThumb, ...(xAutoPost ? styles.toggleThumbOn : {}) }} />
+                    <span className={`toggleThumb${xAutoPost ? ' toggleThumbOn' : ''}`} />
                   </button>
                   {xAutoPost && (
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={styles.autoClearHint}>Post every</span>
+                      <span className="autoClearHint">Post every</span>
                       <select
-                        style={{ ...styles.select, width: "auto" }}
+                        className="appSelect"
+                        style={{width: "auto"}}
                         value={xIntervalMinutes}
                         onChange={(e) => saveXInterval(Number(e.target.value))}
                       >
@@ -761,16 +760,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Require review</span>
+              <div className="settingsRow">
+                <span className="settingsLabel">Require review</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <button
-                    style={{ ...styles.toggle, ...(xRequireReview ? styles.toggleOn : {}) }}
+                    className={`toggle${xRequireReview ? ' toggleOn' : ''}`}
                     onClick={() => saveXRequireReview(!xRequireReview)}
                   >
-                    <span style={{ ...styles.toggleThumb, ...(xRequireReview ? styles.toggleThumbOn : {}) }} />
+                    <span className={`toggleThumb${xRequireReview ? ' toggleThumbOn' : ''}`} />
                   </button>
-                  <span style={styles.autoClearHint}>
+                  <span className="autoClearHint">
                     {xRequireReview
                       ? "You'll approve each post before it goes live."
                       : "Trace posts automatically without approval."}
@@ -778,15 +777,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={styles.settingsRow}>
-                <span style={styles.settingsLabel}>Communities</span>
+              <div className="settingsRow">
+                <span className="settingsLabel">Communities</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
                   {xCommunities.map((community, index) => (
                     <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontSize: 12, color: "var(--text)" }}>{community.name}</span>
                       <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{community.id}</span>
                       <button
-                        style={styles.chipX}
+                        className="chipX"
                         onClick={() => {
                           const next = xCommunities.filter((_, filterIndex) => filterIndex !== index);
                           saveXCommunities(next);
@@ -795,21 +794,23 @@ export default function App() {
                       >×</button>
                     </div>
                   ))}
-                  <div style={styles.addRow}>
+                  <div className="addRow">
                     <input
-                      style={{ ...styles.domainInput, flex: 1 }}
+                      className="domainInput"
+                      style={{flex: 1}}
                       placeholder="Name"
                       value={xCommunityNameInput}
                       onChange={(e) => setXCommunityNameInput(e.target.value)}
                     />
                     <input
-                      style={{ ...styles.domainInput, width: 130 }}
+                      className="domainInput"
+                      style={{width: 130}}
                       placeholder="Community ID"
                       value={xCommunityIdInput}
                       onChange={(e) => setXCommunityIdInput(e.target.value)}
                     />
                     <button
-                      style={styles.addBtn}
+                      className="addBtn"
                       onClick={() => {
                         const name = xCommunityNameInput.trim();
                         const id   = xCommunityIdInput.trim();
@@ -824,10 +825,11 @@ export default function App() {
               </div>
 
               {xCommunities.length > 0 && (
-                <div style={styles.settingsRow}>
-                  <span style={styles.settingsLabel}>Default</span>
+                <div className="settingsRow">
+                  <span className="settingsLabel">Default</span>
                   <select
-                    style={{ ...styles.select, width: "auto" }}
+                    className="appSelect"
+                    style={{width: "auto"}}
                     value={xDefaultCommunityId}
                     onChange={(e) => saveXDefaultCommunity(e.target.value)}
                   >
@@ -841,47 +843,46 @@ export default function App() {
             </div>
           )}
 
-          <button style={styles.doneBtn} onClick={() => setShowSettings(false)}>Done</button>
+          <button className="doneBtn" onClick={() => setShowSettings(false)}>Done</button>
         </div>
       )}
 
-      <main style={styles.main}>
-        <div style={styles.controls}>
+      <main className="main">
+        <div className="controls">
           <input type="date" value={date} max={todayStr()}
-            onChange={(e) => setDate(e.target.value)} style={styles.datePicker} />
-          <button onClick={fetchEvents} disabled={loading}
-            style={{ ...styles.btn, ...styles.btnGhost }}>
+            onChange={(e) => setDate(e.target.value)} className="datePicker" />
+          <button onClick={fetchEvents} disabled={loading} className="btn btnGhost">
             {loading ? "Loading…" : "Refresh"}
           </button>
-          <div style={styles.stats}>
-            <span style={styles.statChip} data-type="desktop">{desktopCount} desktop</span>
-            <span style={styles.statChip} data-type="browser">{browserCount} browser</span>
+          <div className="stats">
+            <span className="statChip" data-type="desktop">{desktopCount} desktop</span>
+            <span className="statChip" data-type="browser">{browserCount} browser</span>
           </div>
 
           <div style={{ position: "relative" }}>
             <button onClick={() => { setClearMenu((prev) => !prev); setClearConfirm(null); }}
-              style={{ ...styles.btn, ...styles.btnGhost, color: "var(--text-muted)" }}>
+              className="btn btnGhost" style={{color: "var(--text-muted)"}}>
               Clear
             </button>
             {clearMenu && (
               <>
-                <div style={styles.backdrop} onClick={() => { setClearMenu(false); setClearConfirm(null); }} />
-                <div style={styles.clearDropdown}>
+                <div className="backdrop" onClick={() => { setClearMenu(false); setClearConfirm(null); }} />
+                <div className="clearDropdown">
                   {clearConfirm ? (
-                    <div style={styles.confirmBox}>
-                      <p style={styles.confirmText}>
+                    <div className="confirmBox">
+                      <p className="confirmText">
                         Delete events from the last <strong>{clearConfirm.label}</strong>?
                       </p>
-                      <div style={styles.confirmBtns}>
-                        <button style={styles.confirmCancel} onClick={() => setClearConfirm(null)}>Cancel</button>
-                        <button style={styles.confirmDelete} onClick={handleClearConfirm}>Delete</button>
+                      <div className="confirmBtns">
+                        <button className="confirmCancel" onClick={() => setClearConfirm(null)}>Cancel</button>
+                        <button className="confirmDelete" onClick={handleClearConfirm}>Delete</button>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <div style={styles.dropdownHeader}>Clear last…</div>
+                      <div className="dropdownHeader">Clear last…</div>
                       {CLEAR_RANGES.map((range) => (
-                        <button key={range.minutes} style={styles.dropdownItem} onClick={() => setClearConfirm(range)}>
+                        <button key={range.minutes} className="dropdownItem" onClick={() => setClearConfirm(range)}>
                           {range.label}
                         </button>
                       ))}
@@ -893,19 +894,20 @@ export default function App() {
           </div>
 
           <button onClick={generateSummary} disabled={summaryLoading || todayEvents.length === 0}
-            style={{ ...styles.btn, ...styles.btnDarkAccent, marginLeft: "auto" }}>
+            className="btn btnDarkAccent" style={{marginLeft: "auto"}}>
             {summaryLoading ? "Generating…" : "Generate Summary"}
           </button>
         </div>
 
-        {error && <div style={styles.error}>{error}</div>}
+        {error && <div className="error">{error}</div>}
 
         {xCredentialsOk && !(summary.length > 0 || summaryLoading) && (
-          <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Compose</h2>
+          <section className="section">
+            <h2 className="sectionTitle">Compose</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <textarea
-                style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" }}
+                className="styleInput"
+                style={{minHeight: 80, width: "100%", boxSizing: "border-box"}}
                 placeholder="Write a post…"
                 value={composerText}
                 onChange={(e) => setComposerText(e.target.value)}
@@ -916,7 +918,7 @@ export default function App() {
                   {composerText.length > 0 ? `${composerText.length} / 280` : ""}
                 </span>
                 <button
-                  style={{ ...styles.btn, ...styles.btnDarkAccent }}
+                  className="btn btnDarkAccent"
                   disabled={!composerText.trim() || composerText.length > 280}
                   onClick={handlePostComposer}
                 >
@@ -928,9 +930,9 @@ export default function App() {
         )}
 
         {(summary.length > 0 || summaryLoading) && (
-          <section style={styles.section}>
+          <section className="section">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <h2 style={styles.sectionTitle}>Summary</h2>
+              <h2 className="sectionTitle">Summary</h2>
               {!summaryLoading && (
                 <button
                   onClick={() => setSummary([])}
@@ -954,21 +956,22 @@ export default function App() {
           </section>
         )}
 
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>Activity</h2>
+        <section className="section">
+          <h2 className="sectionTitle">Activity</h2>
           <Timeline eventsByDate={eventsByDate} today={todayStr()} />
         </section>
       </main>
 
       {showReview && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Review post</h3>
-            <div style={styles.charCount} data-over={pendingText.length > 280}>
+        <div className="modalBackdrop">
+          <div className="modal">
+            <h3 className="modalTitle">Review post</h3>
+            <div className="charCount" data-over={pendingText.length > 280}>
               {pendingText.length} / 280
             </div>
             <textarea
-              style={{ ...styles.styleInput, minHeight: 100, width: "100%", boxSizing: "border-box" }}
+              className="styleInput"
+              style={{minHeight: 100, width: "100%", boxSizing: "border-box"}}
               value={pendingText}
               onChange={(e) => setPendingText(e.target.value)}
             />
@@ -976,7 +979,8 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
                 <select
-                  style={{ ...styles.select, flex: 1, width: "auto" }}
+                  className="appSelect"
+                  style={{flex: 1, width: "auto"}}
                   value={xSelectedCommunityId}
                   onChange={(e) => setXSelectedCommunityId(e.target.value)}
                 >
@@ -987,16 +991,16 @@ export default function App() {
                 </select>
               </div>
             )}
-            {xPostError && <div style={styles.xError}>{xPostError}</div>}
-            <div style={styles.modalBtns}>
+            {xPostError && <div className="xError">{xPostError}</div>}
+            <div className="modalBtns">
               <button
-                style={styles.confirmCancel}
+                className="confirmCancel"
                 onClick={() => { setShowReview(false); setXPostError(""); pendingRef.current = false; }}
               >
                 Skip
               </button>
               <button
-                style={{ ...styles.btn, ...styles.btnDarkAccent }}
+                className="btn btnDarkAccent"
                 disabled={xPosting || pendingText.length === 0 || pendingText.length > 280}
                 onClick={() => doPost(pendingText)}
               >
@@ -1008,21 +1012,22 @@ export default function App() {
       )}
 
       {showThreadReview && (
-        <div style={styles.modalBackdrop}>
-          <div style={{ ...styles.modal, width: 500 }}>
-            <h3 style={styles.modalTitle}>Review thread</h3>
+        <div className="modalBackdrop">
+          <div className="modal" style={{width: 500}}>
+            <h3 className="modalTitle">Review thread</h3>
             {pendingThreadTexts.map((text, index) => (
               <div key={index} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                     {index === 0 ? "Post" : `Reply ${index}`}
                   </span>
-                  <span style={{ ...styles.charCount, ...(text.length > 280 ? { color: "#ef4444" } : {}) }}>
+                  <span className="charCount" data-over={text.length > 280}>
                     {text.length} / 280
                   </span>
                 </div>
                 <textarea
-                  style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" }}
+                  className="styleInput"
+                  style={{minHeight: 80, width: "100%", boxSizing: "border-box"}}
                   value={text}
                   onChange={(e) => {
                     const next = [...pendingThreadTexts];
@@ -1036,7 +1041,8 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
                 <select
-                  style={{ ...styles.select, flex: 1, width: "auto" }}
+                  className="appSelect"
+                  style={{flex: 1, width: "auto"}}
                   value={xSelectedCommunityId}
                   onChange={(e) => setXSelectedCommunityId(e.target.value)}
                 >
@@ -1047,16 +1053,16 @@ export default function App() {
                 </select>
               </div>
             )}
-            {xPostError && <div style={styles.xError}>{xPostError}</div>}
-            <div style={styles.modalBtns}>
+            {xPostError && <div className="xError">{xPostError}</div>}
+            <div className="modalBtns">
               <button
-                style={styles.confirmCancel}
+                className="confirmCancel"
                 onClick={() => { setShowThreadReview(false); setXPostError(""); }}
               >
                 Skip
               </button>
               <button
-                style={{ ...styles.btn, ...styles.btnDarkAccent }}
+                className="btn btnDarkAccent"
                 disabled={xThreadPosting || pendingThreadTexts.some((text) => text.length === 0 || text.length > 280)}
                 onClick={() => doPostThread(pendingThreadTexts, xSelectedCommunityId)}
               >
@@ -1068,244 +1074,8 @@ export default function App() {
       )}
 
       {xPostSuccess && (
-        <div style={styles.successToast}>Posted to X</div>
+        <div className="successToast">Posted to X</div>
       )}
-
-      <style>{`
-        @keyframes spin  { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-        [data-type="desktop"] { background: var(--desktop-dim); color: var(--desktop); }
-        [data-type="browser"] { background: var(--browser-dim); color: var(--browser); }
-        button:disabled { opacity: 0.45; cursor: default; }
-        [data-over="true"] { color: #ef4444 !important; }
-      `}</style>
     </div>
   );
 }
-
-const styles = {
-  root: { minHeight: "100vh", display: "flex", flexDirection: "column" },
-
-  header: {
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "0 24px", height: 52,
-    borderBottom: "1px solid var(--border)", background: "var(--surface)",
-    position: "sticky", top: 0, zIndex: 10,
-  },
-  headerRight: { display: "flex", alignItems: "center", gap: 12 },
-  shieldBadge: { fontSize: 11, color: "var(--text-muted)" },
-  activeProvider: { fontSize: 11, color: "var(--text-muted)" },
-  trackingPill: {
-    display: "flex", alignItems: "center", gap: 5,
-    background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)",
-    borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 500,
-    color: "#22c55e", cursor: "pointer",
-  },
-  trackingPillPaused: {
-    background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)", color: "#ef4444",
-  },
-  trackingDot: { width: 6, height: 6, borderRadius: "50%", flexShrink: 0 },
-  settingsBtn: {
-    background: "none", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text-muted)", fontSize: 12, padding: "4px 12px", cursor: "pointer",
-  },
-
-  settingsPanel: {
-    display: "flex", flexDirection: "column",
-    background: "var(--surface-2)", borderBottom: "1px solid var(--border)",
-    maxHeight: "65vh", overflowY: "auto",
-  },
-  settingsTabs: { display: "flex", padding: "0 24px", borderBottom: "1px solid var(--border)" },
-  settingsTab: {
-    background: "none", border: "none", borderBottom: "2px solid transparent",
-    color: "var(--text-muted)", fontSize: 12, fontWeight: 500,
-    padding: "10px 16px", cursor: "pointer", marginBottom: -1,
-  },
-  settingsTabActive: { color: "var(--text)", borderBottomColor: "var(--accent)" },
-  tabContent: { display: "flex", flexDirection: "column", gap: 14, padding: "16px 24px" },
-  tabHint: { fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 },
-
-  settingsRow: { display: "flex", alignItems: "flex-start", gap: 16 },
-  settingsLabel: { fontSize: 12, color: "var(--text-muted)", flexShrink: 0, width: 110, paddingTop: 7 },
-  providerTabs: { display: "flex", gap: 6, flexWrap: "wrap" },
-  providerTab: {
-    position: "relative", background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: 6, color: "var(--text-muted)", fontSize: 12, padding: "5px 12px", cursor: "pointer",
-  },
-  providerTabActive: { background: "var(--accent-dim)", borderColor: "var(--accent)", color: "#fff" },
-  keyDot: {
-    position: "absolute", top: 4, right: 4, width: 5, height: 5,
-    borderRadius: "50%", background: "#22c55e",
-  },
-  settingsInput: {
-    flex: 1, background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: 6, color: "var(--text)", padding: "6px 10px",
-    outline: "none", fontSize: 13, fontFamily: "inherit",
-  },
-  styleInput: {
-    flex: 1, background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: 6, color: "var(--text)", padding: "8px 10px",
-    outline: "none", resize: "vertical", lineHeight: 1.5,
-    fontFamily: "inherit", fontSize: 13,
-  },
-
-  catBlock: {
-    border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden",
-  },
-  catHeader: {
-    display: "flex", alignItems: "center", gap: 10,
-    padding: "10px 14px", background: "var(--surface)",
-  },
-  expandArrow: {
-    background: "none", border: "none", color: "var(--text-muted)",
-    fontSize: 12, cursor: "pointer", padding: 0, width: 14, flexShrink: 0,
-  },
-  catIcon: { fontSize: 16, flexShrink: 0 },
-  catLabel: { fontSize: 13, fontWeight: 500, color: "var(--text)" },
-  catCount: { fontSize: 11, color: "var(--text-muted)" },
-  toggle: {
-    width: 36, height: 20, borderRadius: 10, background: "var(--border)",
-    border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0,
-  },
-  toggleOn: { background: "var(--accent)" },
-  toggleThumb: {
-    position: "absolute", top: 3, left: 3, width: 14, height: 14,
-    borderRadius: "50%", background: "#fff", transition: "left 0.2s",
-  },
-  toggleThumbOn: { left: 19 },
-  catBody: {
-    padding: "12px 14px", borderTop: "1px solid var(--border)",
-    display: "flex", flexDirection: "column", gap: 10,
-    background: "var(--bg)",
-  },
-  domainGrid: { display: "flex", flexWrap: "wrap", gap: 6 },
-  chipDefault: {
-    display: "inline-flex", alignItems: "center", gap: 4,
-    background: "var(--surface-2)", border: "1px solid var(--border)",
-    borderRadius: 20, padding: "2px 8px 2px 10px", fontSize: 11, color: "var(--text-muted)",
-  },
-  chipAdded: {
-    display: "inline-flex", alignItems: "center", gap: 4,
-    background: "var(--accent-dim)", border: "1px solid var(--accent)",
-    borderRadius: 20, padding: "2px 8px 2px 10px", fontSize: 11, color: "#a5b4fc",
-  },
-  chipX: {
-    background: "none", border: "none", color: "inherit",
-    opacity: 0.6, fontSize: 13, cursor: "pointer", padding: 0, lineHeight: 1,
-  },
-  addRow: { display: "flex", gap: 8 },
-  domainInput: {
-    flex: 1, background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: 6, color: "var(--text)", padding: "5px 10px",
-    outline: "none", fontSize: 12, fontFamily: "inherit",
-  },
-  addBtn: {
-    background: "var(--surface)", border: "1px solid var(--border)",
-    borderRadius: 6, color: "var(--text)", padding: "5px 12px",
-    fontSize: 12, cursor: "pointer",
-  },
-
-  autoClearGroup: { display: "flex", flexDirection: "column", gap: 6 },
-  scheduleGroup: { display: "flex", flexDirection: "column", gap: 6 },
-  scheduleInputRow: { display: "flex", alignItems: "center", gap: 8 },
-  scheduleLabel: { fontSize: 12, color: "var(--text-muted)", flexShrink: 0 },
-  timeInput: {
-    background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text)", padding: "5px 8px", fontSize: 12, fontFamily: "inherit",
-    outline: "none", colorScheme: "dark",
-  },
-  clearScheduleBtn: {
-    background: "none", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", cursor: "pointer",
-  },
-  select: {
-    background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text)", padding: "6px 10px", fontSize: 13, fontFamily: "inherit",
-    outline: "none", colorScheme: "dark", width: 180,
-  },
-  autoClearHint: { fontSize: 11, color: "var(--text-muted)" },
-
-  doneBtn: {
-    alignSelf: "flex-end", margin: "0 24px 16px",
-    background: "var(--accent)", color: "#fff", padding: "6px 18px",
-    borderRadius: 6, fontWeight: 500, fontSize: 13, cursor: "pointer", border: "none",
-  },
-
-  main: {
-    flex: 1, padding: "24px", maxWidth: 860,
-    margin: "0 auto", width: "100%",
-    display: "flex", flexDirection: "column", gap: 24,
-  },
-  controls: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-  datePicker: {
-    background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text)", padding: "6px 10px", colorScheme: "dark",
-    outline: "none", fontSize: 13, fontFamily: "inherit",
-  },
-  btn: { padding: "6px 14px", borderRadius: 6, fontWeight: 500, cursor: "pointer", border: "none" },
-  btnGhost: { background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" },
-  btnDarkAccent: { background: "var(--dark-accent)", color: "#fff" },
-  stats: { display: "flex", gap: 6 },
-  statChip: { fontSize: 11, fontWeight: 500, padding: "3px 8px", borderRadius: 20 },
-
-  backdrop: { position: "fixed", inset: 0, zIndex: 19 },
-  clearDropdown: {
-    position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20,
-    background: "var(--surface-2)", border: "1px solid var(--border)",
-    borderRadius: 8, minWidth: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden",
-  },
-  dropdownHeader: {
-    padding: "8px 14px 4px", fontSize: 11, fontWeight: 600,
-    color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em",
-  },
-  dropdownItem: {
-    display: "block", width: "100%", textAlign: "left",
-    background: "none", border: "none", color: "var(--text)",
-    padding: "8px 14px", fontSize: 13, cursor: "pointer",
-  },
-  confirmBox: { padding: 14, display: "flex", flexDirection: "column", gap: 10 },
-  confirmText: { fontSize: 13, color: "var(--text)", lineHeight: 1.4 },
-  confirmBtns: { display: "flex", gap: 8, justifyContent: "flex-end" },
-  confirmCancel: {
-    background: "none", border: "1px solid var(--border)", borderRadius: 6,
-    color: "var(--text-muted)", padding: "5px 12px", fontSize: 12, cursor: "pointer",
-  },
-  confirmDelete: {
-    background: "#dc2626", border: "none", borderRadius: 6,
-    color: "#fff", padding: "5px 12px", fontSize: 12, cursor: "pointer",
-  },
-
-  error: {
-    background: "#2a0a0a", border: "1px solid #5a1a1a",
-    borderRadius: 6, color: "#f87171", padding: "10px 14px", fontSize: 13,
-  },
-  modalBackdrop: {
-    position: "fixed", inset: 0, zIndex: 50,
-    background: "rgba(0,0,0,0.6)", display: "flex",
-    alignItems: "center", justifyContent: "center",
-  },
-  modal: {
-    background: "var(--surface-2)", border: "1px solid var(--border)",
-    borderRadius: 12, padding: 24, width: 420, maxWidth: "90vw",
-    display: "flex", flexDirection: "column", gap: 14,
-    boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
-  },
-  modalTitle: { fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 },
-  charCount: { fontSize: 11, color: "var(--text-muted)", textAlign: "right" },
-  modalBtns: { display: "flex", gap: 8, justifyContent: "flex-end" },
-  xError: {
-    background: "#2a0a0a", border: "1px solid #5a1a1a",
-    borderRadius: 6, color: "#f87171", padding: "8px 12px", fontSize: 12,
-  },
-  successToast: {
-    position: "fixed", bottom: 24, right: 24, zIndex: 60,
-    background: "#14532d", border: "1px solid #166534",
-    borderRadius: 8, color: "#86efac", padding: "10px 18px",
-    fontSize: 13, fontWeight: 500, boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-  },
-  section: { display: "flex", flexDirection: "column", gap: 14 },
-  sectionTitle: {
-    fontSize: 13, fontWeight: 600, color: "var(--text-muted)",
-    textTransform: "uppercase", letterSpacing: "0.06em",
-  },
-};
