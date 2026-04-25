@@ -48,7 +48,8 @@ The extension filters a hardcoded list of sensitive domains (banking, medical, a
 Trace (Tauri v2 desktop app)
   ├── Rust — polls the active window every 5s → SQLite
   ├── Rust — axum HTTP server on localhost:7734 (receives Chrome extension events)
-  └── React — timeline UI + AI summary cards
+  ├── Rust — OAuth 1.0a signing + X API v2 posting
+  └── React — timeline UI + AI summary cards + X post controls
 
 Chrome Extension (Manifest V3)
   └── Listens for tab changes → POST /event to localhost:7734
@@ -77,6 +78,21 @@ Generates 3 social-media-post-sized summary cards from the day's activity log. S
 API keys are stored in `localStorage` and never leave the machine except when calling the chosen provider.
 
 A **summary style** field lets you define how the summaries should be written (tone, format, focus).
+
+The prompt includes the current local time so relative phrases in generated summaries ("this morning", "tonight") are accurate to your timezone.
+
+### X / Social
+Post summary cards directly to X (Twitter) from Settings → Social. Requires a developer app at [developer.x.com](https://developer.x.com) with **Read & Write** permissions.
+
+**Credentials required** (all stored in `localStorage`):
+- Consumer Key & Consumer Secret
+- Access Token & Access Token Secret
+
+**Manual posting** — each summary card has a "Post to X" button. Click it to post that card immediately (or queue it for review).
+
+**Auto-post** — Settings → Social → Auto-post. Generates a fresh summary on a configurable interval (15 min – 24 h) and posts the first card automatically.
+
+**Require review** — when enabled (default), a confirmation dialog appears before anything is published. Disable it to post without approval.
 
 ### Privacy & Exclusions
 Settings → **Privacy** tab. Each category can be expanded to view and edit its domain list.
@@ -116,3 +132,6 @@ Settings → **Privacy** tab. Each category can be expanded to view and edit its
 | Auto-clear interval | Settings → Data | `localStorage` |
 | Tracking schedule | Settings → Data | `localStorage` |
 | Pause state | Header pill | `localStorage` |
+| X credentials | Settings → Social | `localStorage` |
+| X auto-post interval | Settings → Social | `localStorage` |
+| X require review | Settings → Social | `localStorage` |

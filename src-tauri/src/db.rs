@@ -46,7 +46,7 @@ pub fn insert_event(conn: &Connection, event: &Event) -> Result<()> {
 // Delete events FROM the last N minutes (manual clear).
 pub fn delete_recent(conn: &Connection, minutes: i64) -> Result<usize> {
     Ok(conn.execute(
-        "DELETE FROM events WHERE timestamp >= datetime('now', ?1)",
+        "DELETE FROM events WHERE datetime(timestamp) >= datetime('now', ?1)",
         [format!("-{} minutes", minutes)],
     )?)
 }
@@ -54,7 +54,7 @@ pub fn delete_recent(conn: &Connection, minutes: i64) -> Result<usize> {
 // Delete events OLDER than N minutes (auto-clear / retention).
 pub fn delete_older_than(conn: &Connection, minutes: i64) -> Result<usize> {
     Ok(conn.execute(
-        "DELETE FROM events WHERE timestamp < datetime('now', ?1)",
+        "DELETE FROM events WHERE datetime(timestamp) < datetime('now', ?1)",
         [format!("-{} minutes", minutes)],
     )?)
 }

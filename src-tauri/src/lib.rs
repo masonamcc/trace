@@ -1,5 +1,5 @@
 use base64::Engine;
-use chrono::Timelike;
+use chrono::{Local, Timelike};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use std::collections::HashSet;
@@ -83,7 +83,8 @@ async fn get_daily_summary(
     if events.is_empty() {
         return Ok(vec!["No activity recorded for this date.".to_string()]);
     }
-    let prompt = build_prompt(&events, &date, &style);
+    let current_time = Local::now().format("%H:%M").to_string();
+    let prompt = build_prompt(&events, &date, &current_time, &style);
     match provider.as_str() {
         "openai"  => call_openai_compat(&prompt, &api_key, "https://api.openai.com/v1", "gpt-4o").await,
         "gemini"  => call_gemini(&prompt, &api_key).await,
@@ -196,7 +197,7 @@ pub fn in_schedule(schedule: &Option<(u32, u32)>) -> bool {
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
 
-fn build_prompt(events: &[db::Event], date: &str, style: &str) -> String {
+fn build_prompt(events: &[db::Event], date: &str, current_time: &str, style: &str) -> String {
     let events_text: String = events.iter().map(|e| {
         let time = e.timestamp.get(11..16).unwrap_or("??:??");
         match e.source.as_str() {
@@ -213,14 +214,15 @@ fn build_prompt(events: &[db::Event], date: &str, style: &str) -> String {
     else { format!("\n\nAdditional style instructions: {}", style.trim()) };
 
     format!(
-        "Here is a computer activity log for {}:\n\n{}\n\n\
+        "Here is a computer activity log for {} (current local time: {}):\n\n{}\n\n\
         Write exactly 3 short summaries of this person's day. \
         Each must be 1-3 sentences — punchy and social-media-post sized, like a tweet. \
         Cover different angles: e.g. what was built, what was researched, how the day flowed overall. \
-        Write in first person.{}\n\n\
+        Write in first person. When using time references like \"this morning\" or \"tonight\", \
+        use the current local time provided above to ensure accuracy.{}\n\n\
         Return ONLY a JSON array of exactly 3 strings, no markdown, no extra text:\n\
         [\"summary one\", \"summary two\", \"summary three\"]",
-        date, events_text, style_instruction
+        date, current_time, events_text, style_instruction
     )
 }
 

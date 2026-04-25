@@ -35,7 +35,7 @@ jobs:
           projectPath: src-tauri
           distPath: ../build
           tagName: ${{ github.ref_name }}
-          releaseName: CodeStash ${{ github.ref_name }}
+          releaseName: Trace ${{ github.ref_name }}
           releaseBody: "Automated release"
 
         env:

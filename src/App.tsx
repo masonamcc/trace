@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import Timeline from "./components/Timeline";
 import Summary from "./components/Summary";
 import { Event } from "./types";
+import logo from "./assets/trace_favicon.png"
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,10 @@ const CLEAR_RANGES = [
 const AUTO_CLEAR_OPTIONS = [{ label: "Off", minutes: 0 }, ...CLEAR_RANGES];
 
 const POST_INTERVALS = [
+  { label: "1 minute",   minutes: 1 },
+  { label: "5 minutes",  minutes: 5 },
+  { label: "10 minutes", minutes: 10 },
+  { label: "15 minutes", minutes: 15 },
   { label: "30 minutes", minutes: 30 },
   { label: "1 hour",     minutes: 60 },
   { label: "2 hours",    minutes: 120 },
@@ -423,10 +428,11 @@ export default function App() {
   return (
     <div style={styles.root}>
       <header style={styles.header}>
-        <div style={styles.logo}>
-          <span style={styles.logoMark}>T</span>
-          <span style={styles.logoText}>Trace</span>
+        <div style={{display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '.5rem'}}>
+          <img src={logo} alt="Trace" style={{height: 30}} />
+          <h2>Trace</h2>
         </div>
+
         <div style={styles.headerRight}>
           {activeExclCount > 0 && (
             <span style={styles.shieldBadge} title={`${activeExclCount} exclusion group(s) active`}>
