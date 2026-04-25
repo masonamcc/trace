@@ -4,6 +4,7 @@ interface Props {
   cards: string[];
   loading: boolean;
   onPost?: (text: string) => Promise<"posted" | "queued">;
+  onPostThread?: () => Promise<void>;
   xEnabled?: boolean;
 }
 
@@ -22,9 +23,10 @@ type CardStatus =
   | { type: "queued" }
   | { type: "error"; message: string };
 
-export default function Summary({ cards, loading, onPost, xEnabled }: Props) {
+export default function Summary({ cards, loading, onPost, onPostThread, xEnabled }: Props) {
   const [texts, setTexts] = useState<string[]>(cards);
   const [statuses, setStatuses] = useState<CardStatus[]>(cards.map(() => ({ type: "idle" })));
+  const [threadPosting, setThreadPosting] = useState(false);
 
   useEffect(() => {
     setTexts(cards);
@@ -67,9 +69,20 @@ export default function Summary({ cards, loading, onPost, xEnabled }: Props) {
     );
   }
 
+  async function handlePostThread() {
+    if (!onPostThread) return;
+    setThreadPosting(true);
+    try {
+      await onPostThread();
+    } finally {
+      setThreadPosting(false);
+    }
+  }
+
   if (cards.length === 0) return null;
 
   return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
     <div style={styles.grid}>
       {texts.map((text, i) => {
         const accent = CARD_ACCENTS[i % CARD_ACCENTS.length];
@@ -138,6 +151,18 @@ export default function Summary({ cards, loading, onPost, xEnabled }: Props) {
         );
       })}
     </div>
+    {xEnabled && onPostThread && texts.length > 1 && (
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          style={styles.threadBtn}
+          disabled={threadPosting || texts.some((t) => t.length === 0 || t.length > X_LIMIT)}
+          onClick={handlePostThread}
+        >
+          {threadPosting ? "Posting…" : "Post as thread"}
+        </button>
+      </div>
+    )}
+    </div>
   );
 }
 
@@ -203,6 +228,15 @@ const styles: Record<string, React.CSSProperties> = {
   postBtnQueued:  { borderColor: "rgba(234,179,8,0.4)",  color: "#eab308" },
   postBtnError:   { borderColor: "rgba(239,68,68,0.4)",  color: "#ef4444" },
   postBtnDisabled: { opacity: 0.45, cursor: "not-allowed" },
+  threadBtn: {
+    background: "none",
+    border: "1px solid rgba(29,161,242,0.4)",
+    borderRadius: 6,
+    color: "#1da1f2",
+    fontSize: 12,
+    padding: "5px 14px",
+    cursor: "pointer",
+  },
   skeleton: { gap: 10, pointerEvents: "none" },
   skeletonLine: {
     height: 13,

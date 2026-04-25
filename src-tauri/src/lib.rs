@@ -1,5 +1,5 @@
 use base64::Engine;
-use chrono::{Local, Timelike};
+use chrono::Timelike;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use std::collections::HashSet;
@@ -83,8 +83,32 @@ async fn get_daily_summary(
     if events.is_empty() {
         return Ok(vec!["No activity recorded for this date.".to_string()]);
     }
-    let current_time = Local::now().format("%H:%M").to_string();
-    let prompt = build_prompt(&events, &date, &current_time, &style);
+    let prompt = build_prompt(&events, &date, &style);
+    match provider.as_str() {
+        "openai"  => call_openai_compat(&prompt, &api_key, "https://api.openai.com/v1", "gpt-4o").await,
+        "gemini"  => call_gemini(&prompt, &api_key).await,
+        "grok"    => call_openai_compat(&prompt, &api_key, "https://api.x.ai/v1", "grok-2-1212").await,
+        "mistral" => call_openai_compat(&prompt, &api_key, "https://api.mistral.ai/v1", "mistral-small-latest").await,
+        _         => call_anthropic(&prompt, &api_key).await,
+    }
+}
+
+#[tauri::command]
+async fn get_thread_posts(
+    date: String,
+    api_key: String,
+    style: String,
+    provider: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let events = {
+        let conn = state.db.lock().unwrap();
+        db::get_events_for_date(&conn, &date).unwrap_or_default()
+    };
+    if events.is_empty() {
+        return Ok(vec!["No activity recorded for this date.".to_string()]);
+    }
+    let prompt = build_thread_prompt(&events, &date, &style);
     match provider.as_str() {
         "openai"  => call_openai_compat(&prompt, &api_key, "https://api.openai.com/v1", "gpt-4o").await,
         "gemini"  => call_gemini(&prompt, &api_key).await,
@@ -123,19 +147,14 @@ fn oauth_sign(method: &str, url: &str, params: &[(&str, &str)], consumer_secret:
     base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
 }
 
-#[tauri::command]
-async fn post_to_x(
-    text: String,
-    consumer_key: String,
-    consumer_secret: String,
-    access_token: String,
-    access_token_secret: String,
-) -> Result<(), String> {
+async fn send_tweet(
+    body: &serde_json::Value,
+    consumer_key: &str,
+    consumer_secret: &str,
+    access_token: &str,
+    access_token_secret: &str,
+) -> Result<String, String> {
     use rand::Rng;
-    let consumer_key      = consumer_key.trim().to_string();
-    let consumer_secret   = consumer_secret.trim().to_string();
-    let access_token      = access_token.trim().to_string();
-    let access_token_secret = access_token_secret.trim().to_string();
     let url = "https://api.x.com/2/tweets";
     let nonce: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
@@ -149,30 +168,83 @@ async fn post_to_x(
         .to_string();
 
     let params = [
-        ("oauth_consumer_key",    consumer_key.as_str()),
-        ("oauth_nonce",           nonce.as_str()),
-        ("oauth_signature_method","HMAC-SHA1"),
-        ("oauth_timestamp",       timestamp.as_str()),
-        ("oauth_token",           access_token.as_str()),
-        ("oauth_version",         "1.0"),
+        ("oauth_consumer_key",     consumer_key),
+        ("oauth_nonce",            nonce.as_str()),
+        ("oauth_signature_method", "HMAC-SHA1"),
+        ("oauth_timestamp",        timestamp.as_str()),
+        ("oauth_token",            access_token),
+        ("oauth_version",          "1.0"),
     ];
-    let sig = oauth_sign("POST", url, &params, &consumer_secret, &access_token_secret);
-
+    let sig = oauth_sign("POST", url, &params, consumer_secret, access_token_secret);
     let auth = format!(
         "OAuth oauth_consumer_key=\"{}\",oauth_nonce=\"{}\",oauth_signature=\"{}\",oauth_signature_method=\"HMAC-SHA1\",oauth_timestamp=\"{}\",oauth_token=\"{}\",oauth_version=\"1.0\"",
-        percent_encode(&consumer_key), percent_encode(&nonce),
-        percent_encode(&sig), &timestamp, percent_encode(&access_token),
+        percent_encode(consumer_key), percent_encode(&nonce),
+        percent_encode(&sig), &timestamp, percent_encode(access_token),
     );
 
     let resp = reqwest::Client::new()
         .post(url)
         .header("Authorization", auth)
-        .json(&serde_json::json!({ "text": text }))
+        .json(body)
         .send().await.map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("X API error: {}", body));
+        let err = resp.text().await.unwrap_or_default();
+        return Err(format!("X API error: {}", err));
+    }
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(data["data"]["id"].as_str().unwrap_or("").to_string())
+}
+
+#[tauri::command]
+async fn post_to_x(
+    text: String,
+    consumer_key: String,
+    consumer_secret: String,
+    access_token: String,
+    access_token_secret: String,
+    community_id: Option<String>,
+) -> Result<String, String> {
+    let ck  = consumer_key.trim().to_string();
+    let cs  = consumer_secret.trim().to_string();
+    let at  = access_token.trim().to_string();
+    let ats = access_token_secret.trim().to_string();
+
+    let mut body = serde_json::json!({ "text": text });
+    if let Some(cid) = community_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        body["community_id"] = serde_json::json!(cid);
+    }
+    send_tweet(&body, &ck, &cs, &at, &ats).await
+}
+
+#[tauri::command]
+async fn post_thread_to_x(
+    texts: Vec<String>,
+    consumer_key: String,
+    consumer_secret: String,
+    access_token: String,
+    access_token_secret: String,
+    community_id: Option<String>,
+) -> Result<(), String> {
+    let ck  = consumer_key.trim().to_string();
+    let cs  = consumer_secret.trim().to_string();
+    let at  = access_token.trim().to_string();
+    let ats = access_token_secret.trim().to_string();
+    let cid = community_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+
+    let mut reply_to: Option<String> = None;
+    for (i, text) in texts.iter().enumerate() {
+        let mut body = serde_json::json!({ "text": text });
+        if i == 0 {
+            if let Some(ref c) = cid {
+                body["community_id"] = serde_json::json!(c);
+            }
+        }
+        if let Some(ref parent_id) = reply_to {
+            body["reply"] = serde_json::json!({ "in_reply_to_tweet_id": parent_id });
+        }
+        let tweet_id = send_tweet(&body, &ck, &cs, &at, &ats).await?;
+        reply_to = Some(tweet_id);
     }
     Ok(())
 }
@@ -197,8 +269,8 @@ pub fn in_schedule(schedule: &Option<(u32, u32)>) -> bool {
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
 
-fn build_prompt(events: &[db::Event], date: &str, current_time: &str, style: &str) -> String {
-    let events_text: String = events.iter().map(|e| {
+fn format_events(events: &[db::Event]) -> String {
+    events.iter().map(|e| {
         let time = e.timestamp.get(11..16).unwrap_or("??:??");
         match e.source.as_str() {
             "chrome" => format!("[{}] Browser: {} | {}", time,
@@ -208,21 +280,42 @@ fn build_prompt(events: &[db::Event], date: &str, current_time: &str, style: &st
                 e.app.as_deref().unwrap_or("Unknown"),
                 e.window_title.as_deref().unwrap_or("")),
         }
-    }).collect::<Vec<_>>().join("\n");
+    }).collect::<Vec<_>>().join("\n")
+}
 
+fn build_prompt(events: &[db::Event], date: &str, style: &str) -> String {
+    let events_text = format_events(events);
     let style_instruction = if style.trim().is_empty() { String::new() }
     else { format!("\n\nAdditional style instructions: {}", style.trim()) };
 
     format!(
-        "Here is a computer activity log for {} (current local time: {}):\n\n{}\n\n\
+        "Here is a computer activity log for {}:\n\n{}\n\n\
         Write exactly 3 short summaries of this person's day. \
         Each must be 1-3 sentences — punchy and social-media-post sized, like a tweet. \
         Cover different angles: e.g. what was built, what was researched, how the day flowed overall. \
-        Write in first person. When using time references like \"this morning\" or \"tonight\", \
-        use the current local time provided above to ensure accuracy.{}\n\n\
+        Write in first person. Do NOT use relative time-of-day phrases like \"this morning\", \
+        \"this afternoon\", or \"tonight\".{}\n\n\
         Return ONLY a JSON array of exactly 3 strings, no markdown, no extra text:\n\
         [\"summary one\", \"summary two\", \"summary three\"]",
-        date, current_time, events_text, style_instruction
+        date, events_text, style_instruction
+    )
+}
+
+fn build_thread_prompt(events: &[db::Event], date: &str, style: &str) -> String {
+    let events_text = format_events(events);
+    let style_instruction = if style.trim().is_empty() { String::new() }
+    else { format!("\n\nAdditional style instructions: {}", style.trim()) };
+
+    format!(
+        "Here is a computer activity log for {}:\n\n{}\n\n\
+        Write a Twitter/X thread of 3-5 posts about this person's day. \
+        Each post must be under 280 characters. \
+        Be specific and detailed — name the actual apps, files, topics, problems solved, \
+        or things built. Each post should cover a distinct task or area of work. \
+        Write in first person. Do NOT use relative time-of-day phrases like \"this morning\", \
+        \"this afternoon\", or \"tonight\".{}\n\n\
+        Return ONLY a JSON array of strings (one per thread post), no markdown, no extra text.",
+        date, events_text, style_instruction
     )
 }
 
@@ -314,11 +407,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_events, get_daily_summary,
+            get_events, get_daily_summary, get_thread_posts,
             clear_recent, clear_older_than,
             set_exclusions,
             set_tracking_paused, set_tracking_schedule,
-            post_to_x,
+            post_to_x, post_thread_to_x,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -52,6 +52,13 @@ fn get_active_window() -> Option<(String, String)> {
 #[cfg(not(target_os = "windows"))]
 fn get_active_window() -> Option<(String, String)> { None }
 
+const BROWSERS: &[&str] = &["chrome", "firefox", "msedge", "brave", "opera", "vivaldi", "waterfox", "librewolf"];
+
+fn is_browser(app: &str) -> bool {
+    let lower = app.to_lowercase();
+    BROWSERS.iter().any(|b| lower == *b)
+}
+
 fn is_excluded(app: &str, title: &str, exclusions: &HashSet<String>) -> bool {
     let haystack = format!("{} {}", app, title).to_lowercase();
     exclusions.iter().any(|p| haystack.contains(p))
@@ -72,7 +79,7 @@ pub fn start_watcher(
             if should_track {
                 if let Some((app, title)) = get_active_window() {
                     let excl = exclusions.read().unwrap();
-                    if !is_excluded(&app, &title, &excl) {
+                    if !is_browser(&app) && !is_excluded(&app, &title, &excl) {
                         drop(excl);
                         let key = format!("{}|{}", app, title);
                         if key != last_key {

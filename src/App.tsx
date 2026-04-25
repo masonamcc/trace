@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Timeline from "./components/Timeline";
 import Summary from "./components/Summary";
+import SplashScreen from "./components/SplashScreen";
 import { Event } from "./types";
 import logo from "./assets/trace_favicon.png"
 
@@ -65,15 +66,6 @@ const EXCLUSION_CATEGORIES = [
       "webmd.com","mayoclinic.org","healthline.com","medscape.com","drugs.com",
       "rxlist.com","medlineplus.gov","nih.gov","mychart.com","zocdoc.com",
       "goodrx.com","everydayhealth.com","patient.co.uk",
-    ],
-  },
-  {
-    id: "nsfw",
-    label: "Adult Content",
-    icon: "🔞",
-    domains: [
-      "pornhub.com","xvideos.com","xnxx.com","redtube.com","youporn.com",
-      "onlyfans.com","fansly.com",
     ],
   },
   {
@@ -156,12 +148,28 @@ export default function App() {
   const [xAutoPost,          setXAutoPost]          = useState(() => localStorage.getItem("trace_x_auto") === "true");
   const [xIntervalMinutes,   setXIntervalMinutes]   = useState(() => Number(localStorage.getItem("trace_x_interval") ?? "60"));
   const [xRequireReview,     setXRequireReview]     = useState(() => localStorage.getItem("trace_x_review") !== "false");
-  const [pendingText,        setPendingText]        = useState("");
-  const [showReview,         setShowReview]         = useState(false);
-  const [xPosting,           setXPosting]           = useState(false);
-  const [xPostError,         setXPostError]         = useState("");
-  const [xPostSuccess,       setXPostSuccess]       = useState(false);
-  const pendingRef = useRef(false); // prevents concurrent auto-posts
+  const [xCommunities,       setXCommunities]       = useState<{ name: string; id: string }[]>(
+    () => loadJson("trace_x_communities", [])
+  );
+  const [xDefaultCommunityId, setXDefaultCommunityId] = useState(
+    () => localStorage.getItem("trace_x_default_community") ?? ""
+  );
+  const [xCommunityNameInput, setXCommunityNameInput] = useState("");
+  const [xCommunityIdInput,   setXCommunityIdInput]   = useState("");
+  const [pendingText,         setPendingText]          = useState("");
+  const [showReview,          setShowReview]           = useState(false);
+  const [xSelectedCommunityId, setXSelectedCommunityId] = useState("");
+  const [showThreadReview,    setShowThreadReview]     = useState(false);
+  const [pendingThreadTexts,  setPendingThreadTexts]   = useState<string[]>([]);
+  const [xPosting,            setXPosting]             = useState(false);
+  const [xThreadPosting,      setXThreadPosting]       = useState(false);
+  const [xPostError,          setXPostError]           = useState("");
+  const [xPostSuccess,        setXPostSuccess]         = useState(false);
+  const [composerText,        setComposerText]         = useState("");
+  const [splashVisible,       setSplashVisible]        = useState(true);
+  const [splashFading,        setSplashFading]         = useState(false);
+  const pendingRef     = useRef(false); // prevents concurrent auto-posts
+  const composerRef    = useRef(false); // tracks whether pending post came from composer
 
   // Exclusions
   const [activeCategories, setActiveCategories] = useState<Set<CategoryId>>(
@@ -185,6 +193,12 @@ export default function App() {
   const xCredentialsOk = !!(xConsumerKey && xConsumerSecret && xAccessToken && xAccessTokenSecret);
 
   // ── Effects ──────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const fade   = setTimeout(() => setSplashFading(true),  2000);
+    const remove = setTimeout(() => setSplashVisible(false), 2550);
+    return () => { clearTimeout(fade); clearTimeout(remove); };
+  }, []);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -278,8 +292,10 @@ export default function App() {
         consumerSecret: xConsumerSecret,
         accessToken: xAccessToken,
         accessTokenSecret: xAccessTokenSecret,
+        communityId: xSelectedCommunityId || null,
       });
       setShowReview(false);
+      if (composerRef.current) { setComposerText(""); composerRef.current = false; }
       setXPostSuccess(true);
       setTimeout(() => setXPostSuccess(false), 3000);
     } catch (e) {
@@ -290,6 +306,28 @@ export default function App() {
     }
   }
 
+  async function doPostThread(texts: string[], communityId: string) {
+    setXThreadPosting(true);
+    setXPostError("");
+    try {
+      await invoke("post_thread_to_x", {
+        texts,
+        consumerKey: xConsumerKey,
+        consumerSecret: xConsumerSecret,
+        accessToken: xAccessToken,
+        accessTokenSecret: xAccessTokenSecret,
+        communityId: communityId || null,
+      });
+      setShowThreadReview(false);
+      setXPostSuccess(true);
+      setTimeout(() => setXPostSuccess(false), 3000);
+    } catch (e) {
+      setXPostError(String(e));
+    } finally {
+      setXThreadPosting(false);
+    }
+  }
+
   async function handlePostCard(text: string): Promise<"posted" | "queued"> {
     if (!xCredentialsOk) {
       setShowSettings(true);
@@ -297,6 +335,7 @@ export default function App() {
       throw new Error("No X credentials — add them in Settings → Social.");
     }
     setPendingText(text);
+    setXSelectedCommunityId(xDefaultCommunityId);
     setXPostError("");
     if (xRequireReview) {
       setShowReview(true);
@@ -310,6 +349,7 @@ export default function App() {
         consumerSecret: xConsumerSecret,
         accessToken: xAccessToken,
         accessTokenSecret: xAccessTokenSecret,
+        communityId: xDefaultCommunityId || null,
       });
       pendingRef.current = false;
       return "posted";
@@ -319,8 +359,56 @@ export default function App() {
     }
   }
 
+  async function handlePostThread(): Promise<void> {
+    if (!xCredentialsOk) {
+      setShowSettings(true);
+      setSettingsTab("social");
+      throw new Error("No X credentials — add them in Settings → Social.");
+    }
+    if (!currentKey) { setShowSettings(true); throw new Error("No AI key — add one in Settings → AI."); }
+    setXSelectedCommunityId(xDefaultCommunityId);
+    setXPostError("");
+    const threadTexts = await invoke<string[]>("get_thread_posts", {
+      date, apiKey: currentKey, style: summaryStyle, provider,
+    });
+    setPendingThreadTexts(threadTexts);
+    if (xRequireReview) {
+      setShowThreadReview(true);
+      return;
+    }
+    await doPostThread(threadTexts, xDefaultCommunityId);
+  }
+
+  async function handlePostComposer() {
+    const text = composerText.trim();
+    if (!text || !xCredentialsOk) return;
+    setXSelectedCommunityId(xDefaultCommunityId);
+    setXPostError("");
+    if (xRequireReview) {
+      composerRef.current = true;
+      setPendingText(text);
+      setShowReview(true);
+      return;
+    }
+    try {
+      await invoke("post_to_x", {
+        text,
+        consumerKey: xConsumerKey,
+        consumerSecret: xConsumerSecret,
+        accessToken: xAccessToken,
+        accessTokenSecret: xAccessTokenSecret,
+        communityId: xDefaultCommunityId || null,
+      });
+      setComposerText("");
+      setXPostSuccess(true);
+      setTimeout(() => setXPostSuccess(false), 3000);
+    } catch (e) {
+      setXPostError(String(e));
+    }
+  }
+
   async function generateSummary() {
-    if (!currentKey) { setShowSettings(true); return; }
+    if (!currentKey) { setSettingsTab("ai"); setShowSettings(true); return; }
     setSummaryLoading(true); setSummary([]); setError("");
     try {
       setSummary(await invoke<string[]>("get_daily_summary", {
@@ -362,6 +450,12 @@ export default function App() {
   }
   function saveXRequireReview(val: boolean) {
     setXRequireReview(val); localStorage.setItem("trace_x_review", String(val));
+  }
+  function saveXCommunities(val: { name: string; id: string }[]) {
+    setXCommunities(val); localStorage.setItem("trace_x_communities", JSON.stringify(val));
+  }
+  function saveXDefaultCommunity(id: string) {
+    setXDefaultCommunityId(id); localStorage.setItem("trace_x_default_community", id);
   }
 
   function togglePause() {
@@ -427,6 +521,7 @@ export default function App() {
 
   return (
     <div style={styles.root}>
+      {splashVisible && <SplashScreen fading={splashFading} />}
       <header style={styles.header}>
         <div style={{display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '.5rem'}}>
           <img src={logo} alt="Trace" style={{height: 30}} />
@@ -698,6 +793,67 @@ export default function App() {
                   </span>
                 </div>
               </div>
+
+              <div style={styles.settingsRow}>
+                <span style={styles.settingsLabel}>Communities</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+                  {xCommunities.map((c, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 12, color: "var(--text)" }}>{c.name}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{c.id}</span>
+                      <button
+                        style={styles.chipX}
+                        onClick={() => {
+                          const next = xCommunities.filter((_, j) => j !== i);
+                          saveXCommunities(next);
+                          if (xDefaultCommunityId === c.id) saveXDefaultCommunity("");
+                        }}
+                      >×</button>
+                    </div>
+                  ))}
+                  <div style={styles.addRow}>
+                    <input
+                      style={{ ...styles.domainInput, flex: 1 }}
+                      placeholder="Name"
+                      value={xCommunityNameInput}
+                      onChange={(e) => setXCommunityNameInput(e.target.value)}
+                    />
+                    <input
+                      style={{ ...styles.domainInput, width: 130 }}
+                      placeholder="Community ID"
+                      value={xCommunityIdInput}
+                      onChange={(e) => setXCommunityIdInput(e.target.value)}
+                    />
+                    <button
+                      style={styles.addBtn}
+                      onClick={() => {
+                        const name = xCommunityNameInput.trim();
+                        const id   = xCommunityIdInput.trim();
+                        if (!name || !id) return;
+                        saveXCommunities([...xCommunities, { name, id }]);
+                        setXCommunityNameInput("");
+                        setXCommunityIdInput("");
+                      }}
+                    >Add</button>
+                  </div>
+                </div>
+              </div>
+
+              {xCommunities.length > 0 && (
+                <div style={styles.settingsRow}>
+                  <span style={styles.settingsLabel}>Default</span>
+                  <select
+                    style={{ ...styles.select, width: "auto" }}
+                    value={xDefaultCommunityId}
+                    onChange={(e) => saveXDefaultCommunity(e.target.value)}
+                  >
+                    <option value="">Timeline</option>
+                    {xCommunities.map((c, i) => (
+                      <option key={i} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
@@ -753,20 +909,67 @@ export default function App() {
           </div>
 
           <button onClick={generateSummary} disabled={summaryLoading || events.length === 0}
-            style={{ ...styles.btn, ...styles.btnAccent, marginLeft: "auto" }}>
+            style={{ ...styles.btn, ...styles.btnDarkAccent, marginLeft: "auto" }}>
             {summaryLoading ? "Generating…" : "Generate Summary"}
           </button>
         </div>
 
         {error && <div style={styles.error}>{error}</div>}
 
+        {xCredentialsOk && (
+          <section style={{
+            ...styles.section,
+            opacity: summary.length > 0 || summaryLoading ? 0 : 1,
+            pointerEvents: summary.length > 0 || summaryLoading ? "none" : "auto",
+            transition: "opacity 0.35s ease",
+          } as React.CSSProperties}>
+            <h2 style={styles.sectionTitle}>Compose</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <textarea
+                style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+                placeholder="Write a post…"
+                value={composerText}
+                onChange={(e) => setComposerText(e.target.value)}
+                rows={3}
+              />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 11, color: composerText.length > 280 ? "#ef4444" : "var(--text-muted)" }}>
+                  {composerText.length > 0 ? `${composerText.length} / 280` : ""}
+                </span>
+                <button
+                  style={{ ...styles.btn, ...styles.btnDarkAccent }}
+                  disabled={!composerText.trim() || composerText.length > 280}
+                  onClick={handlePostComposer}
+                >
+                  Post to X
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {(summary.length > 0 || summaryLoading) && (
           <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Summary</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h2 style={styles.sectionTitle}>Summary</h2>
+              {!summaryLoading && (
+                <button
+                  onClick={() => setSummary([])}
+                  style={{
+                    background: "none", border: "none", color: "var(--text-muted)",
+                    fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "0 2px",
+                  }}
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              )}
+            </div>
             <Summary
               cards={summary}
               loading={summaryLoading}
               onPost={handlePostCard}
+              onPostThread={handlePostThread}
               xEnabled={true}
             />
           </section>
@@ -796,6 +999,21 @@ export default function App() {
               value={pendingText}
               onChange={(e) => setPendingText(e.target.value)}
             />
+            {xCommunities.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
+                <select
+                  style={{ ...styles.select, flex: 1, width: "auto" } as React.CSSProperties}
+                  value={xSelectedCommunityId}
+                  onChange={(e) => setXSelectedCommunityId(e.target.value)}
+                >
+                  <option value="">Timeline</option>
+                  {xCommunities.map((c, i) => (
+                    <option key={i} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {xPostError && <div style={styles.xError}>{xPostError}</div>}
             <div style={styles.modalBtns}>
               <button
@@ -805,11 +1023,72 @@ export default function App() {
                 Skip
               </button>
               <button
-                style={{ ...styles.btn, ...styles.btnAccent }}
+                style={{ ...styles.btn, ...styles.btnDarkAccent }}
                 disabled={xPosting || pendingText.length === 0 || pendingText.length > 280}
                 onClick={() => doPost(pendingText)}
               >
                 {xPosting ? "Posting…" : "Post to X"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Thread review modal ── */}
+      {showThreadReview && (
+        <div style={styles.modalBackdrop}>
+          <div style={{ ...styles.modal, width: 500 } as React.CSSProperties}>
+            <h3 style={styles.modalTitle}>Review thread</h3>
+            {pendingThreadTexts.map((text, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {i === 0 ? "Post" : `Reply ${i}`}
+                  </span>
+                  <span style={{ ...styles.charCount, ...(text.length > 280 ? { color: "#ef4444" } : {}) } as React.CSSProperties}>
+                    {text.length} / 280
+                  </span>
+                </div>
+                <textarea
+                  style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+                  value={text}
+                  onChange={(e) => {
+                    const next = [...pendingThreadTexts];
+                    next[i] = e.target.value;
+                    setPendingThreadTexts(next);
+                  }}
+                />
+              </div>
+            ))}
+            {xCommunities.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
+                <select
+                  style={{ ...styles.select, flex: 1, width: "auto" } as React.CSSProperties}
+                  value={xSelectedCommunityId}
+                  onChange={(e) => setXSelectedCommunityId(e.target.value)}
+                >
+                  <option value="">Timeline</option>
+                  {xCommunities.map((c, i) => (
+                    <option key={i} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {xPostError && <div style={styles.xError}>{xPostError}</div>}
+            <div style={styles.modalBtns}>
+              <button
+                style={styles.confirmCancel}
+                onClick={() => { setShowThreadReview(false); setXPostError(""); }}
+              >
+                Skip
+              </button>
+              <button
+                style={{ ...styles.btn, ...styles.btnDarkAccent }}
+                disabled={xThreadPosting || pendingThreadTexts.some((t) => t.length === 0 || t.length > 280)}
+                onClick={() => doPostThread(pendingThreadTexts, xSelectedCommunityId)}
+              >
+                {xThreadPosting ? "Posting…" : "Post thread"}
               </button>
             </div>
           </div>
@@ -1005,6 +1284,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   btn: { padding: "6px 14px", borderRadius: 6, fontWeight: 500, cursor: "pointer", border: "none" },
   btnGhost: { background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" },
+  btnDarkAccent: { background: "var(--dark-accent)", color: "#fff" },
   btnAccent: { background: "var(--accent)", color: "#fff" },
   stats: { display: "flex", gap: 6 },
   statChip: { fontSize: 11, fontWeight: 500, padding: "3px 8px", borderRadius: 20 },
