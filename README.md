@@ -16,10 +16,7 @@ A local-first AI activity tracker. Watches your active windows and browser tabs,
 # 1. Install JS dependencies
 npm install
 
-# 2. Generate the required Windows icon (run once)
-node scripts/gen-icons.mjs
-
-# 3. Start the dev server
+# 2. Start the dev server (Tauri starts Vite automatically)
 npm run tauri dev
 ```
 
@@ -49,11 +46,13 @@ Trace (Tauri v2 desktop app)
   ├── Rust — polls the active window every 5s → SQLite
   ├── Rust — axum HTTP server on localhost:7734 (receives Chrome extension events)
   ├── Rust — OAuth 1.0a signing + X API v2 posting
-  └── React — timeline UI + AI summary cards + X post controls
+  └── React (JSX, Vite) — timeline UI + AI summary cards + X post controls
 
 Chrome Extension (Manifest V3)
   └── Listens for tab changes → POST /event to localhost:7734
 ```
+
+**Frontend:** React 18 + Vite, plain JavaScript (`.jsx`). No TypeScript, no CSS framework.
 
 **Data path (Windows):** `%LOCALAPPDATA%\Trace\events.db`
 
@@ -90,9 +89,13 @@ Post summary cards directly to X (Twitter) from Settings → Social. Requires a 
 
 **Manual posting** — each summary card has a "Post to X" button. Click it to post that card immediately (or queue it for review).
 
-**Auto-post** — Settings → Social → Auto-post. Generates a fresh summary on a configurable interval (15 min – 24 h) and posts the first card automatically.
+**Auto-post** — Settings → Social → Auto-post. Generates a fresh summary on a configurable interval (1 min – 24 h) and posts the first card automatically.
+
+**Post as thread** — generates all summary cards and posts them as a reply chain.
 
 **Require review** — when enabled (default), a confirmation dialog appears before anything is published. Disable it to post without approval.
+
+**Communities** — add X community IDs in Settings → Social. Select a default destination; override per-post in the review dialog.
 
 ### Privacy & Exclusions
 Settings → **Privacy** tab. Each category can be expanded to view and edit its domain list.
@@ -101,7 +104,6 @@ Settings → **Privacy** tab. Each category can be expanded to view and edit its
 |---------------------|----------|
 | Banking & Finance   | Blocks 19 domains by default |
 | Medical & Health    | Blocks 13 domains by default |
-| Adult Content       | Blocks 7 domains by default  |
 | Legal & Government  | Blocks 5 domains by default  |
 
 - Toggle entire categories on/off
@@ -111,7 +113,7 @@ Settings → **Privacy** tab. Each category can be expanded to view and edit its
 - The Chrome extension also hard-blocks sensitive domains client-side as a second layer
 
 ### Tracking Controls
-- **Pause / Resume** — the pill in the header header instantly stops all event ingestion. Persists across restarts.
+- **Pause / Resume** — the pill in the header instantly stops all event ingestion. Persists across restarts.
 - **Schedule** — Settings → Data tab. Set a daily time window (e.g. 06:00–21:00). Events outside the window are silently dropped. Overnight windows (e.g. 22:00–06:00) are supported.
 
 ### History Management
@@ -133,5 +135,7 @@ Settings → **Privacy** tab. Each category can be expanded to view and edit its
 | Tracking schedule | Settings → Data | `localStorage` |
 | Pause state | Header pill | `localStorage` |
 | X credentials | Settings → Social | `localStorage` |
+| X communities | Settings → Social | `localStorage` |
+| X default community | Settings → Social | `localStorage` |
 | X auto-post interval | Settings → Social | `localStorage` |
 | X require review | Settings → Social | `localStorage` |

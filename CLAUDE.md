@@ -6,11 +6,35 @@ This file defines the coding style and conventions for Tauri + React projects. F
 
 ## Stack
 
-- **Frontend:** React (JavaScript, not TypeScript), Create React App
+- **Frontend:** React (JavaScript, not TypeScript), Vite
 - **Desktop shell:** Tauri v2
 - **Rust backend:** Tauri commands in `src-tauri/src/`
 - **Package manager:** npm
 - **Styling:** Plain CSS with utility classes (no CSS frameworks like Tailwind)
+
+---
+
+## Project Structure
+
+```
+project-root/
+  index.html          — Vite entry point (at root, not public/)
+  vite.config.js      — Vite config
+  package.json        — scripts use "vite" / "vite build", not react-scripts
+  src/
+    main.jsx          — ReactDOM.createRoot entry
+    App.jsx           — root component
+    index.css         — global CSS
+    App.css           — app-level CSS
+    components/       — child components (.jsx)
+    assets/           — images, icons
+  src-tauri/
+    tauri.conf.json
+    src/
+      main.rs
+      lib.rs
+      command.rs
+```
 
 ---
 
@@ -239,6 +263,31 @@ tauri-plugin-process = "2"
 
 ---
 
+## Vite Configuration (`vite.config.js`)
+
+```js
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  clearScreen: false,
+  server: {
+    port: 1420,
+    strictPort: true,
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+});
+```
+
+- Dev server runs on **port 1420** (not 3000).
+- `clearScreen: false` keeps Tauri CLI output visible.
+- `watch.ignored` prevents Rust recompiles from triggering Vite HMR.
+
+---
+
 ## Tauri Configuration (`tauri.conf.json`)
 
 Baseline config shape:
@@ -249,8 +298,10 @@ Baseline config shape:
   "version": "1.0.0",
   "identifier": "com.masonamcc.appname",
   "build": {
-    "frontendDist": "../build",
-    "devUrl": "http://localhost:3000"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
@@ -269,24 +320,84 @@ Baseline config shape:
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "icon": ["icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }
 ```
 
+Key differences from CRA:
+- `frontendDist` is `"../dist"` (Vite output), not `"../build"`
+- `devUrl` is `"http://localhost:1420"` (Vite port), not 3000
+- `beforeDevCommand` / `beforeBuildCommand` are required — Tauri uses these to start/build the frontend automatically
+
 ---
 
-## package.json scripts
+## package.json
 
 ```json
-"scripts": {
-  "start": "react-scripts start",
-  "build": "react-scripts build",
-  "test": "react-scripts test",
-  "eject": "react-scripts eject",
-  "dev": "npm start"
+{
+  "name": "appname",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-react": "^4",
+    "vite": "^5"
+  }
 }
 ```
+
+- `"type": "module"` is required for Vite ES module builds.
+- No `react-scripts`, no `typescript`, no `@types/*` packages.
+
+---
+
+## Entry Point (`src/main.jsx`)
+
+```jsx
+import { StrictMode } from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+```
+
+## Root HTML (`index.html`)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AppName</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+- `index.html` lives at the **project root**, not inside `public/`.
+- The script tag points to `src/main.jsx` directly.
 
 ---
 
@@ -303,6 +414,69 @@ import { getVersion } from "@tauri-apps/api/app";
 
 ---
 
+## Migrating from TypeScript (TSX → JSX)
+
+When converting an existing TypeScript/CRA project to JavaScript/Vite, follow these steps in order.
+
+### 1. Swap dependencies
+
+Remove:
+```
+typescript  @types/react  @types/react-dom  @types/node  react-scripts
+```
+
+Add:
+```
+vite  @vitejs/plugin-react  @tauri-apps/cli
+```
+
+Add `"type": "module"` to `package.json`.
+
+### 2. Replace config files
+
+- Delete `tsconfig.json` (and `tsconfig.node.json` if present).
+- Delete `react-app-env.d.ts` or any `.d.ts` shim files.
+- Add `vite.config.js` (see template above).
+- Update `package.json` scripts to use `vite` / `vite build`.
+
+### 3. Rename files
+
+- `*.tsx` → `*.jsx`
+- `*.ts` → `*.js`
+- `vite.config.ts` → `vite.config.js`
+- Move `index.html` from `public/` to the project root and update the script tag to `<script type="module" src="/src/main.jsx"></script>`.
+
+### 4. Strip TypeScript from source files
+
+For each `.jsx` / `.js` file:
+
+- **Remove interface and type declarations** — `interface Props { ... }`, `type Foo = ...`
+- **Remove generic type parameters** — `useState<string>("")` → `useState("")`, `useRef<HTMLDivElement>(null)` → `useRef(null)`
+- **Remove type annotations** — `const name: string = ""` → `const name = ""`, function parameters like `(value: number)` → `(value)`
+- **Remove return type annotations** — `function foo(): void { }` → `function foo() { }`
+- **Remove `as` casts** — `value as string` → `value`
+- **Remove non-null assertions** — `element!.focus()` → `element.focus()`
+- **Remove `React.FC<Props>`** — `const App: React.FC<Props> = (props) =>` → just `export default function App(props)`
+- **Replace enums** — TypeScript `enum Direction { Up, Down }` → plain object `const DIRECTION = { Up: "Up", Down: "Down" }`
+- **Remove event type annotations** — `(e: React.ChangeEvent<HTMLInputElement>)` → `(e)`
+
+### 5. Update tauri.conf.json
+
+- Change `frontendDist` from `"../build"` to `"../dist"`
+- Change `devUrl` from `"http://localhost:3000"` to `"http://localhost:1420"`
+- Add `"beforeDevCommand": "npm run dev"` and `"beforeBuildCommand": "npm run build"`
+
+### 6. Verify
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Fix any remaining errors — they are almost always leftover type syntax or a missing `vite.config.js` field.
+
+---
+
 ## General Rules
 
 - No TypeScript. JavaScript only.
@@ -312,3 +486,4 @@ import { getVersion } from "@tauri-apps/api/app";
 - Async operations always use `await`.
 - Dark UI theme by default.
 - Keep Rust commands thin — do logic in `command.rs`, register in `lib.rs`, keep `main.rs` minimal.
+- Build tool is **Vite**, not Create React App. Never use `react-scripts`.
