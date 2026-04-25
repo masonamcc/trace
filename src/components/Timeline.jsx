@@ -1,91 +1,86 @@
 import { useState } from "react";
-import { Event, Session } from "../types";
 
-function buildSessions(events: Event[]): Session[] {
-  if (events.length === 0) return [];
+export default function Timeline({ eventsByDate, today }) {
+  const [expanded, setExpanded] = useState(() => new Set([today]));
 
-  const sessions: Session[] = [];
-  let current: Session | null = null;
+  const dates = Object.keys(eventsByDate).sort((a, b) => b.localeCompare(a));
 
-  for (const ev of events) {
-    const label =
-      ev.source === "chrome"
-        ? (ev.page_title ?? ev.url ?? "Browser")
-        : (ev.app ?? "Unknown");
+  function buildSessions(events) {
+    if (events.length === 0) return [];
 
-    const detail =
-      ev.source === "chrome"
-        ? (ev.url ?? "")
-        : (ev.window_title ?? "");
+    const sessions = [];
+    let current = null;
 
-    const key = ev.source === "chrome"
-      ? getDomain(ev.url)
-      : ev.app ?? "Unknown";
+    for (const event of events) {
+      const label =
+        event.source === "chrome"
+          ? (event.page_title ?? event.url ?? "Browser")
+          : (event.app ?? "Unknown");
 
-    if (current && current.label.split(" — ")[0] === key) {
-      current.end = formatTime(ev.timestamp);
-      current.eventCount++;
-      current.detail = detail || current.detail;
-    } else {
-      if (current) sessions.push(current);
-      current = {
-        start: formatTime(ev.timestamp),
-        end: formatTime(ev.timestamp),
-        label,
-        detail,
-        source: ev.source as "desktop" | "chrome",
-        eventCount: 1,
-      };
+      const detail =
+        event.source === "chrome"
+          ? (event.url ?? "")
+          : (event.window_title ?? "");
+
+      const key = event.source === "chrome"
+        ? getDomain(event.url)
+        : event.app ?? "Unknown";
+
+      if (current && current.label.split(" — ")[0] === key) {
+        current.end = formatTime(event.timestamp);
+        current.eventCount++;
+        current.detail = detail || current.detail;
+      } else {
+        if (current) sessions.push(current);
+        current = {
+          start: formatTime(event.timestamp),
+          end: formatTime(event.timestamp),
+          label,
+          detail,
+          source: event.source,
+          eventCount: 1,
+        };
+      }
+    }
+
+    if (current) sessions.push(current);
+    return sessions;
+  }
+
+  function getDomain(url) {
+    if (!url) return "Browser";
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return "Browser";
     }
   }
 
-  if (current) sessions.push(current);
-  return sessions;
-}
-
-function getDomain(url?: string): string {
-  if (!url) return "Browser";
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "Browser";
+  function formatTime(timestamp) {
+    const dateObj = new Date(timestamp);
+    return dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-}
 
-function formatTime(ts: string): string {
-  const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+  function formatDayLabel(dateStr) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-function formatDayLabel(dateStr: string, today: string): string {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = yesterday.toISOString().slice(0, 10);
+    if (dateStr === today) return "Today";
+    if (dateStr === yesterdayStr) return "Yesterday";
 
-  if (dateStr === today) return "Today";
-  if (dateStr === yStr) return "Yesterday";
+    return new Date(dateStr + "T12:00:00").toLocaleDateString([], {
+      weekday: "long", month: "long", day: "numeric",
+    });
+  }
 
-  return new Date(dateStr + "T12:00:00").toLocaleDateString([], {
-    weekday: "long", month: "long", day: "numeric",
-  });
-}
-
-interface Props {
-  eventsByDate: Record<string, Event[]>;
-  today: string;
-}
-
-export default function Timeline({ eventsByDate, today }: Props) {
-  const dates = Object.keys(eventsByDate).sort((a, b) => b.localeCompare(a));
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([today]));
-
-  const toggle = (date: string) => {
+  function toggle(date) {
     setExpanded((prev) => {
       const next = new Set(prev);
       next.has(date) ? next.delete(date) : next.add(date);
       return next;
     });
-  };
+  }
 
   if (dates.length === 0) {
     return <div style={styles.empty}>No activity recorded.</div>;
@@ -97,7 +92,7 @@ export default function Timeline({ eventsByDate, today }: Props) {
         const events = eventsByDate[date] ?? [];
         const sessions = buildSessions(events);
         const isExpanded = expanded.has(date);
-        const label = formatDayLabel(date, today);
+        const label = formatDayLabel(date);
         const isToday = date === today;
 
         return (
@@ -113,21 +108,21 @@ export default function Timeline({ eventsByDate, today }: Props) {
                 {sessions.length === 0 ? (
                   <div style={styles.emptyDay}>No activity recorded.</div>
                 ) : (
-                  sessions.map((s, i) => (
-                    <div key={i} style={styles.session}>
+                  sessions.map((session, index) => (
+                    <div key={index} style={styles.session}>
                       <div style={styles.timeCol}>
-                        <span style={styles.timeStart}>{s.start}</span>
-                        {s.start !== s.end && (
+                        <span style={styles.timeStart}>{session.start}</span>
+                        {session.start !== session.end && (
                           <>
                             <span style={styles.timeSep}>–</span>
-                            <span style={styles.timeEnd}>{s.end}</span>
+                            <span style={styles.timeEnd}>{session.end}</span>
                           </>
                         )}
                       </div>
                       <div
                         style={{
                           ...styles.dot,
-                          background: s.source === "chrome" ? "var(--browser)" : "var(--desktop)",
+                          background: session.source === "chrome" ? "var(--browser)" : "var(--desktop)",
                         }}
                       />
                       <div style={styles.content}>
@@ -135,17 +130,17 @@ export default function Timeline({ eventsByDate, today }: Props) {
                           <span
                             style={{
                               ...styles.badgeInner,
-                              background: s.source === "chrome" ? "var(--browser-dim)" : "var(--desktop-dim)",
-                              color: s.source === "chrome" ? "var(--browser)" : "var(--desktop)",
+                              background: session.source === "chrome" ? "var(--browser-dim)" : "var(--desktop-dim)",
+                              color: session.source === "chrome" ? "var(--browser)" : "var(--desktop)",
                             }}
                           >
-                            {s.source === "chrome" ? "Browser" : "App"}
+                            {session.source === "chrome" ? "Browser" : "App"}
                           </span>
                         </div>
-                        <div style={styles.label}>{s.label}</div>
-                        {s.detail && s.detail !== s.label && (
-                          <div style={styles.detail} title={s.detail}>
-                            {s.detail.length > 80 ? s.detail.slice(0, 80) + "…" : s.detail}
+                        <div style={styles.label}>{session.label}</div>
+                        {session.detail && session.detail !== session.label && (
+                          <div style={styles.detail} title={session.detail}>
+                            {session.detail.length > 80 ? session.detail.slice(0, 80) + "…" : session.detail}
                           </div>
                         )}
                       </div>
@@ -161,7 +156,7 @@ export default function Timeline({ eventsByDate, today }: Props) {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles = {
   container: {
     display: "flex",
     flexDirection: "column",
@@ -193,7 +188,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     cursor: "pointer",
     textAlign: "left",
-  } as React.CSSProperties,
+  },
   dayHeaderToday: {
     background: "var(--surface)",
   },

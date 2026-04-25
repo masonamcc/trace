@@ -1,12 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Timeline from "./components/Timeline";
 import Summary from "./components/Summary";
 import SplashScreen from "./components/SplashScreen";
-import { Event } from "./types";
 import logo from "./assets/trace_favicon.png"
-
-// ── Constants ──────────────────────────────────────────────────────────────────
 
 const PROVIDERS = [
   { id: "anthropic", label: "Claude",  company: "Anthropic", model: "claude-sonnet-4-6",   placeholder: "sk-ant-api03-…" },
@@ -14,9 +11,7 @@ const PROVIDERS = [
   { id: "gemini",    label: "Gemini",  company: "Google",    model: "gemini-2.0-flash",     placeholder: "AIzaSy…" },
   { id: "grok",      label: "Grok",    company: "xAI",       model: "grok-2-1212",          placeholder: "xai-…" },
   { id: "mistral",   label: "Mistral", company: "Mistral",   model: "mistral-small-latest", placeholder: "…" },
-] as const;
-
-type ProviderId = typeof PROVIDERS[number]["id"];
+];
 
 const CLEAR_RANGES = [
   { label: "30 min",   minutes: 30 },
@@ -74,225 +69,33 @@ const EXCLUSION_CATEGORIES = [
     icon: "⚖️",
     domains: ["irs.gov","ssa.gov","dmv.org","legalzoom.com","court.gov"],
   },
-] as const;
-
-type CategoryId = typeof EXCLUSION_CATEGORIES[number]["id"];
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function loadKeys(): Record<ProviderId, string> {
-  const keys = {} as Record<ProviderId, string>;
-  for (const p of PROVIDERS) {
-    if (p.id === "anthropic" && !localStorage.getItem("trace_api_key_anthropic")) {
-      const legacy = localStorage.getItem("trace_api_key") ?? localStorage.getItem("mason_api_key");
-      if (legacy) localStorage.setItem("trace_api_key_anthropic", legacy);
-    }
-    keys[p.id] = localStorage.getItem(`trace_api_key_${p.id}`) ?? "";
-  }
-  return keys;
-}
-
-function loadJson<T>(key: string, fallback: T): T {
-  try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; }
-  catch { return fallback; }
-}
-
-// ── Component ──────────────────────────────────────────────────────────────────
+];
 
 export default function App() {
-  const [date, setDate] = useState(todayStr());
-  const [eventsByDate, setEventsByDate] = useState<Record<string, Event[]>>({});
-  const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState<string[]>([]);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [error, setError] = useState("");
+  // ── Async functions ──────────────────────────────────────────────────────────
 
-  const [provider, setProvider] = useState<ProviderId>(
-    () => (localStorage.getItem("trace_provider") as ProviderId) ?? "anthropic"
-  );
-  const [apiKeys, setApiKeys] = useState<Record<ProviderId, string>>(loadKeys);
-  const [summaryStyle, setSummaryStyle] = useState(
-    () => localStorage.getItem("trace_summary_style") ?? ""
-  );
-
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"ai" | "privacy" | "data" | "social">("ai");
-
-  const [clearMenu, setClearMenu] = useState(false);
-  const [clearConfirm, setClearConfirm] = useState<{ label: string; minutes: number } | null>(null);
-  const [autoClearMinutes, setAutoClearMinutes] = useState(
-    () => Number(localStorage.getItem("trace_auto_clear") ?? "0")
-  );
-  const [isPaused, setIsPaused] = useState(
-    () => localStorage.getItem("trace_paused") === "true"
-  );
-  const [scheduleStart, setScheduleStart] = useState(
-    () => localStorage.getItem("trace_schedule_start") ?? ""
-  );
-  const [scheduleEnd, setScheduleEnd] = useState(
-    () => localStorage.getItem("trace_schedule_end") ?? ""
-  );
-
-  // X / social
-  const [xClientId,          setXClientId]          = useState(() => localStorage.getItem("trace_x_cid") ?? "");
-  const [xClientSecret,      setXClientSecret]      = useState(() => localStorage.getItem("trace_x_cse") ?? "");
-  const [xBearerToken,       setXBearerToken]       = useState(() => localStorage.getItem("trace_x_bt")  ?? "");
-  const [xConsumerKey,       setXConsumerKey]       = useState(() => localStorage.getItem("trace_x_ck")  ?? "");
-  const [xConsumerSecret,    setXConsumerSecret]    = useState(() => localStorage.getItem("trace_x_cs")  ?? "");
-  const [xAccessToken,       setXAccessToken]       = useState(() => localStorage.getItem("trace_x_at")  ?? "");
-  const [xAccessTokenSecret, setXAccessTokenSecret] = useState(() => localStorage.getItem("trace_x_ats") ?? "");
-  const [xAutoPost,          setXAutoPost]          = useState(() => localStorage.getItem("trace_x_auto") === "true");
-  const [xIntervalMinutes,   setXIntervalMinutes]   = useState(() => Number(localStorage.getItem("trace_x_interval") ?? "60"));
-  const [xRequireReview,     setXRequireReview]     = useState(() => localStorage.getItem("trace_x_review") !== "false");
-  const [xCommunities,       setXCommunities]       = useState<{ name: string; id: string }[]>(
-    () => loadJson("trace_x_communities", [])
-  );
-  const [xDefaultCommunityId, setXDefaultCommunityId] = useState(
-    () => localStorage.getItem("trace_x_default_community") ?? ""
-  );
-  const [xCommunityNameInput, setXCommunityNameInput] = useState("");
-  const [xCommunityIdInput,   setXCommunityIdInput]   = useState("");
-  const [pendingText,         setPendingText]          = useState("");
-  const [showReview,          setShowReview]           = useState(false);
-  const [xSelectedCommunityId, setXSelectedCommunityId] = useState("");
-  const [showThreadReview,    setShowThreadReview]     = useState(false);
-  const [pendingThreadTexts,  setPendingThreadTexts]   = useState<string[]>([]);
-  const [xPosting,            setXPosting]             = useState(false);
-  const [xThreadPosting,      setXThreadPosting]       = useState(false);
-  const [xPostError,          setXPostError]           = useState("");
-  const [xPostSuccess,        setXPostSuccess]         = useState(false);
-  const [composerText,        setComposerText]         = useState("");
-  const [splashVisible,       setSplashVisible]        = useState(true);
-  const [splashFading,        setSplashFading]         = useState(false);
-  const pendingRef     = useRef(false); // prevents concurrent auto-posts
-  const composerRef    = useRef(false); // tracks whether pending post came from composer
-
-  // Exclusions
-  const [activeCategories, setActiveCategories] = useState<Set<CategoryId>>(
-    () => new Set(loadJson<CategoryId[]>("trace_excl_categories", []))
-  );
-  const [categoryAdditions, setCategoryAdditions] = useState<Record<string, string[]>>(() => {
-    const r: Record<string, string[]> = {};
-    for (const c of EXCLUSION_CATEGORIES) r[c.id] = loadJson(`trace_excl_add_${c.id}`, []);
-    return r;
-  });
-  const [categoryRemovals, setCategoryRemovals] = useState<Record<string, string[]>>(() => {
-    const r: Record<string, string[]> = {};
-    for (const c of EXCLUSION_CATEGORIES) r[c.id] = loadJson(`trace_excl_rm_${c.id}`, []);
-    return r;
-  });
-  const [expandedCategory, setExpandedCategory] = useState<CategoryId | null>(null);
-  const [categoryInputs, setCategoryInputs] = useState<Record<string, string>>({});
-
-  const currentProvider = PROVIDERS.find((p) => p.id === provider)!;
-  const currentKey = apiKeys[provider] ?? "";
-  const xCredentialsOk = !!(xConsumerKey && xConsumerSecret && xAccessToken && xAccessTokenSecret);
-
-  // ── Effects ──────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const fade   = setTimeout(() => setSplashFading(true),  2000);
-    const remove = setTimeout(() => setSplashVisible(false), 2550);
-    return () => { clearTimeout(fade); clearTimeout(remove); };
-  }, []);
-
-  const fetchEvents = useCallback(async () => {
+  async function fetchEvents() {
     setLoading(true);
     setError("");
     try {
-      const days: string[] = [];
-      for (let i = 0; i < 7; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        days.push(d.toISOString().slice(0, 10));
+      const days = [];
+      for (let offset = 0; offset < 7; offset++) {
+        const dateObj = new Date();
+        dateObj.setDate(dateObj.getDate() - offset);
+        days.push(dateObj.toISOString().slice(0, 10));
       }
-      const results = await Promise.all(days.map((d) => invoke<Event[]>("get_events", { date: d })));
-      const map: Record<string, Event[]> = {};
-      days.forEach((d, i) => { if (results[i].length > 0) map[d] = results[i]; });
-      setEventsByDate(map);
-    } catch (e) {
-      setError(String(e));
+      const results = await Promise.all(days.map((dateStr) => invoke("get_events", { date: dateStr })));
+      const eventMap = {};
+      days.forEach((dateStr, index) => { if (results[index].length > 0) eventMap[dateStr] = results[index]; });
+      setEventsByDate(eventMap);
+    } catch (error) {
+      setError(String(error));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
-
-  useEffect(() => { setSummary([]); }, [date]);
-
-  useEffect(() => {
-    const id = setInterval(fetchEvents, 30_000);
-    return () => clearInterval(id);
-  }, [fetchEvents]);
-
-  // Sync pause state to Rust on mount and change
-  useEffect(() => {
-    invoke("set_tracking_paused", { paused: isPaused }).catch(console.error);
-  }, [isPaused]);
-
-  // Sync schedule to Rust on mount and change
-  useEffect(() => {
-    invoke("set_tracking_schedule", {
-      start: scheduleStart || null,
-      end: scheduleEnd || null,
-    }).catch(console.error);
-  }, [scheduleStart, scheduleEnd]);
-
-  useEffect(() => {
-    if (autoClearMinutes === 0) return;
-    const run = () => invoke("clear_older_than", { minutes: autoClearMinutes }).catch(console.error);
-    run();
-    const id = setInterval(run, 30 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [autoClearMinutes]);
-
-  useEffect(() => {
-    if (!xAutoPost || !xCredentialsOk || !currentKey) return;
-    const id = setInterval(async () => {
-      if (pendingRef.current) return;
-      pendingRef.current = true;
-      try {
-        const cards = await invoke<string[]>("get_daily_summary", {
-          date: todayStr(), apiKey: currentKey, style: summaryStyle, provider,
-        });
-        if (!cards.length) return;
-        const text = cards[0];
-        if (xRequireReview) {
-          setPendingText(text);
-          setShowReview(true);
-          pendingRef.current = false;
-        } else {
-          await doPost(text);
-        }
-      } catch {
-        pendingRef.current = false;
-      }
-    }, xIntervalMinutes * 60 * 1000);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [xAutoPost, xIntervalMinutes, xRequireReview, xCredentialsOk, currentKey, summaryStyle, provider]);
-
-  useEffect(() => {
-    const patterns: string[] = [];
-    for (const cat of EXCLUSION_CATEGORIES) {
-      if (!activeCategories.has(cat.id)) continue;
-      const removals = new Set(categoryRemovals[cat.id] ?? []);
-      patterns.push(
-        ...cat.domains.filter((d) => !removals.has(d)),
-        ...(categoryAdditions[cat.id] ?? []),
-      );
-    }
-    invoke("set_exclusions", { patterns: [...new Set(patterns)] }).catch(console.error);
-  }, [activeCategories, categoryAdditions, categoryRemovals]);
-
-  // ── Actions ──────────────────────────────────────────────────────────────────
-
-  async function doPost(text: string) {
+  async function doPost(text) {
     setXPosting(true);
     setXPostError("");
     try {
@@ -308,15 +111,15 @@ export default function App() {
       if (composerRef.current) { setComposerText(""); composerRef.current = false; }
       setXPostSuccess(true);
       setTimeout(() => setXPostSuccess(false), 3000);
-    } catch (e) {
-      setXPostError(String(e));
+    } catch (error) {
+      setXPostError(String(error));
     } finally {
       setXPosting(false);
       pendingRef.current = false;
     }
   }
 
-  async function doPostThread(texts: string[], communityId: string) {
+  async function doPostThread(texts, communityId) {
     setXThreadPosting(true);
     setXPostError("");
     try {
@@ -331,14 +134,14 @@ export default function App() {
       setShowThreadReview(false);
       setXPostSuccess(true);
       setTimeout(() => setXPostSuccess(false), 3000);
-    } catch (e) {
-      setXPostError(String(e));
+    } catch (error) {
+      setXPostError(String(error));
     } finally {
       setXThreadPosting(false);
     }
   }
 
-  async function handlePostCard(text: string): Promise<"posted" | "queued"> {
+  async function handlePostCard(text) {
     if (!xCredentialsOk) {
       setShowSettings(true);
       setSettingsTab("social");
@@ -363,13 +166,13 @@ export default function App() {
       });
       pendingRef.current = false;
       return "posted";
-    } catch (e) {
+    } catch (error) {
       pendingRef.current = false;
-      throw e;
+      throw error;
     }
   }
 
-  async function handlePostThread(): Promise<void> {
+  async function handlePostThread() {
     if (!xCredentialsOk) {
       setShowSettings(true);
       setSettingsTab("social");
@@ -378,7 +181,7 @@ export default function App() {
     if (!currentKey) { setShowSettings(true); throw new Error("No AI key — add one in Settings → AI."); }
     setXSelectedCommunityId(xDefaultCommunityId);
     setXPostError("");
-    const threadTexts = await invoke<string[]>("get_thread_posts", {
+    const threadTexts = await invoke("get_thread_posts", {
       date, apiKey: currentKey, style: summaryStyle, provider,
     });
     setPendingThreadTexts(threadTexts);
@@ -412,8 +215,8 @@ export default function App() {
       setComposerText("");
       setXPostSuccess(true);
       setTimeout(() => setXPostSuccess(false), 3000);
-    } catch (e) {
-      setXPostError(String(e));
+    } catch (error) {
+      setXPostError(String(error));
     }
   }
 
@@ -421,50 +224,152 @@ export default function App() {
     if (!currentKey) { setSettingsTab("ai"); setShowSettings(true); return; }
     setSummaryLoading(true); setSummary([]); setError("");
     try {
-      setSummary(await invoke<string[]>("get_daily_summary", {
+      setSummary(await invoke("get_daily_summary", {
         date, apiKey: currentKey, style: summaryStyle, provider,
       }));
-    } catch (e) { setError(String(e)); }
+    } catch (error) { setError(String(error)); }
     finally { setSummaryLoading(false); }
   }
 
   async function handleClearConfirm() {
     if (!clearConfirm) return;
     try { await invoke("clear_recent", { minutes: clearConfirm.minutes }); await fetchEvents(); }
-    catch (e) { setError(String(e)); }
+    catch (error) { setError(String(error)); }
     setClearMenu(false); setClearConfirm(null);
   }
 
-  function saveKey(pid: ProviderId, val: string) {
-    setApiKeys((k) => ({ ...k, [pid]: val }));
-    localStorage.setItem(`trace_api_key_${pid}`, val);
-  }
-  function saveProvider(pid: ProviderId) {
-    setProvider(pid); localStorage.setItem("trace_provider", pid);
-  }
-  function saveSummaryStyle(val: string) {
-    setSummaryStyle(val); localStorage.setItem("trace_summary_style", val);
-  }
-  function saveAutoClear(m: number) {
-    setAutoClearMinutes(m); localStorage.setItem("trace_auto_clear", String(m));
+  // ── useState ─────────────────────────────────────────────────────────────────
+
+  const [date, setDate] = useState(todayStr());
+  const [eventsByDate, setEventsByDate] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [provider, setProvider] = useState(() => localStorage.getItem("trace_provider") ?? "anthropic");
+  const [apiKeys, setApiKeys] = useState(loadKeys);
+  const [summaryStyle, setSummaryStyle] = useState(() => localStorage.getItem("trace_summary_style") ?? "");
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("ai");
+  const [clearMenu, setClearMenu] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(null);
+  const [autoClearMinutes, setAutoClearMinutes] = useState(() => Number(localStorage.getItem("trace_auto_clear") ?? "0"));
+  const [isPaused, setIsPaused] = useState(() => localStorage.getItem("trace_paused") === "true");
+  const [scheduleStart, setScheduleStart] = useState(() => localStorage.getItem("trace_schedule_start") ?? "");
+  const [scheduleEnd, setScheduleEnd] = useState(() => localStorage.getItem("trace_schedule_end") ?? "");
+  const [xClientId, setXClientId] = useState(() => localStorage.getItem("trace_x_cid") ?? "");
+  const [xClientSecret, setXClientSecret] = useState(() => localStorage.getItem("trace_x_cse") ?? "");
+  const [xBearerToken, setXBearerToken] = useState(() => localStorage.getItem("trace_x_bt") ?? "");
+  const [xConsumerKey, setXConsumerKey] = useState(() => localStorage.getItem("trace_x_ck") ?? "");
+  const [xConsumerSecret, setXConsumerSecret] = useState(() => localStorage.getItem("trace_x_cs") ?? "");
+  const [xAccessToken, setXAccessToken] = useState(() => localStorage.getItem("trace_x_at") ?? "");
+  const [xAccessTokenSecret, setXAccessTokenSecret] = useState(() => localStorage.getItem("trace_x_ats") ?? "");
+  const [xAutoPost, setXAutoPost] = useState(() => localStorage.getItem("trace_x_auto") === "true");
+  const [xIntervalMinutes, setXIntervalMinutes] = useState(() => Number(localStorage.getItem("trace_x_interval") ?? "60"));
+  const [xRequireReview, setXRequireReview] = useState(() => localStorage.getItem("trace_x_review") !== "false");
+  const [xCommunities, setXCommunities] = useState(() => loadJson("trace_x_communities", []));
+  const [xDefaultCommunityId, setXDefaultCommunityId] = useState(() => localStorage.getItem("trace_x_default_community") ?? "");
+  const [xCommunityNameInput, setXCommunityNameInput] = useState("");
+  const [xCommunityIdInput, setXCommunityIdInput] = useState("");
+  const [pendingText, setPendingText] = useState("");
+  const [showReview, setShowReview] = useState(false);
+  const [xSelectedCommunityId, setXSelectedCommunityId] = useState("");
+  const [showThreadReview, setShowThreadReview] = useState(false);
+  const [pendingThreadTexts, setPendingThreadTexts] = useState([]);
+  const [xPosting, setXPosting] = useState(false);
+  const [xThreadPosting, setXThreadPosting] = useState(false);
+  const [xPostError, setXPostError] = useState("");
+  const [xPostSuccess, setXPostSuccess] = useState(false);
+  const [composerText, setComposerText] = useState("");
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
+  const pendingRef = useRef(false);
+  const composerRef = useRef(false);
+  const [activeCategories, setActiveCategories] = useState(() => new Set(loadJson("trace_excl_categories", [])));
+  const [categoryAdditions, setCategoryAdditions] = useState(() => {
+    const result = {};
+    for (const cat of EXCLUSION_CATEGORIES) result[cat.id] = loadJson(`trace_excl_add_${cat.id}`, []);
+    return result;
+  });
+  const [categoryRemovals, setCategoryRemovals] = useState(() => {
+    const result = {};
+    for (const cat of EXCLUSION_CATEGORIES) result[cat.id] = loadJson(`trace_excl_rm_${cat.id}`, []);
+    return result;
+  });
+  const [expandedCategory, setExpandedCategory] = useState(null);
+  const [categoryInputs, setCategoryInputs] = useState({});
+
+  // ── Derived values ───────────────────────────────────────────────────────────
+
+  const currentProvider = PROVIDERS.find((providerOption) => providerOption.id === provider);
+  const currentKey = apiKeys[provider] ?? "";
+  const xCredentialsOk = !!(xConsumerKey && xConsumerSecret && xAccessToken && xAccessTokenSecret);
+  const todayEvents = eventsByDate[todayStr()] ?? [];
+  const desktopCount = todayEvents.filter((event) => event.source === "desktop").length;
+  const browserCount = todayEvents.filter((event) => event.source === "chrome").length;
+  const activeExclCount = activeCategories.size;
+
+  // ── Utility functions ────────────────────────────────────────────────────────
+
+  function todayStr() {
+    return new Date().toISOString().slice(0, 10);
   }
 
-  function saveXField(key: string, setter: (v: string) => void, val: string) {
-    setter(val); localStorage.setItem(key, val);
+  function loadKeys() {
+    const keys = {};
+    for (const providerOption of PROVIDERS) {
+      if (providerOption.id === "anthropic" && !localStorage.getItem("trace_api_key_anthropic")) {
+        const legacy = localStorage.getItem("trace_api_key") ?? localStorage.getItem("mason_api_key");
+        if (legacy) localStorage.setItem("trace_api_key_anthropic", legacy);
+      }
+      keys[providerOption.id] = localStorage.getItem(`trace_api_key_${providerOption.id}`) ?? "";
+    }
+    return keys;
   }
-  function saveXAutoPost(val: boolean) {
+
+  function loadJson(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; }
+    catch { return fallback; }
+  }
+
+  function saveKey(pid, val) {
+    setApiKeys((prev) => ({ ...prev, [pid]: val }));
+    localStorage.setItem(`trace_api_key_${pid}`, val);
+  }
+
+  function saveProvider(pid) {
+    setProvider(pid); localStorage.setItem("trace_provider", pid);
+  }
+
+  function saveSummaryStyle(val) {
+    setSummaryStyle(val); localStorage.setItem("trace_summary_style", val);
+  }
+
+  function saveAutoClear(minutes) {
+    setAutoClearMinutes(minutes); localStorage.setItem("trace_auto_clear", String(minutes));
+  }
+
+  function saveXField(storageKey, setter, val) {
+    setter(val); localStorage.setItem(storageKey, val);
+  }
+
+  function saveXAutoPost(val) {
     setXAutoPost(val); localStorage.setItem("trace_x_auto", String(val));
   }
-  function saveXInterval(val: number) {
+
+  function saveXInterval(val) {
     setXIntervalMinutes(val); localStorage.setItem("trace_x_interval", String(val));
   }
-  function saveXRequireReview(val: boolean) {
+
+  function saveXRequireReview(val) {
     setXRequireReview(val); localStorage.setItem("trace_x_review", String(val));
   }
-  function saveXCommunities(val: { name: string; id: string }[]) {
+
+  function saveXCommunities(val) {
     setXCommunities(val); localStorage.setItem("trace_x_communities", JSON.stringify(val));
   }
-  function saveXDefaultCommunity(id: string) {
+
+  function saveXDefaultCommunity(id) {
     setXDefaultCommunityId(id); localStorage.setItem("trace_x_default_community", id);
   }
 
@@ -474,12 +379,12 @@ export default function App() {
     localStorage.setItem("trace_paused", String(next));
   }
 
-  function saveSchedule(start: string, end: string) {
+  function saveSchedule(start, end) {
     setScheduleStart(start); localStorage.setItem("trace_schedule_start", start);
     setScheduleEnd(end);     localStorage.setItem("trace_schedule_end", end);
   }
 
-  function toggleCategory(id: CategoryId) {
+  function toggleCategory(id) {
     setActiveCategories((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -488,11 +393,11 @@ export default function App() {
     });
   }
 
-  function toggleExpand(id: CategoryId) {
+  function toggleExpand(id) {
     setExpandedCategory((prev) => (prev === id ? null : id));
   }
 
-  function addDomain(catId: string) {
+  function addDomain(catId) {
     const raw = (categoryInputs[catId] ?? "").trim().toLowerCase().replace(/^www\./, "");
     if (!raw) return;
     setCategoryAdditions((prev) => {
@@ -502,13 +407,13 @@ export default function App() {
       localStorage.setItem(`trace_excl_add_${catId}`, JSON.stringify(next[catId]));
       return next;
     });
-    setCategoryInputs((p) => ({ ...p, [catId]: "" }));
+    setCategoryInputs((prev) => ({ ...prev, [catId]: "" }));
   }
 
-  function removeDomain(catId: string, domain: string, kind: "default" | "added") {
+  function removeDomain(catId, domain, kind) {
     if (kind === "added") {
       setCategoryAdditions((prev) => {
-        const next = { ...prev, [catId]: (prev[catId] ?? []).filter((d) => d !== domain) };
+        const next = { ...prev, [catId]: (prev[catId] ?? []).filter((existingDomain) => existingDomain !== domain) };
         localStorage.setItem(`trace_excl_add_${catId}`, JSON.stringify(next[catId]));
         return next;
       });
@@ -523,19 +428,93 @@ export default function App() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Effects ──────────────────────────────────────────────────────────────────
 
-  const todayEvents = eventsByDate[todayStr()] ?? [];
-  const desktopCount = todayEvents.filter((e) => e.source === "desktop").length;
-  const browserCount = todayEvents.filter((e) => e.source === "chrome").length;
-  const activeExclCount = activeCategories.size;
+  useEffect(() => {
+    const fadeTimer   = setTimeout(() => setSplashFading(true),  2000);
+    const removeTimer = setTimeout(() => setSplashVisible(false), 2550);
+    return () => { clearTimeout(fadeTimer); clearTimeout(removeTimer); };
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { setSummary([]); }, [date]);
+
+  useEffect(() => {
+    const id = setInterval(fetchEvents, 30_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    invoke("set_tracking_paused", { paused: isPaused }).catch(console.error);
+  }, [isPaused]);
+
+  useEffect(() => {
+    invoke("set_tracking_schedule", {
+      start: scheduleStart || null,
+      end: scheduleEnd || null,
+    }).catch(console.error);
+  }, [scheduleStart, scheduleEnd]);
+
+  useEffect(() => {
+    if (autoClearMinutes === 0) return;
+    const run = () => invoke("clear_older_than", { minutes: autoClearMinutes }).catch(console.error);
+    run();
+    const id = setInterval(run, 30 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [autoClearMinutes]);
+
+  useEffect(() => {
+    if (!xAutoPost || !xCredentialsOk || !currentKey) return;
+    const id = setInterval(async () => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      try {
+        const cards = await invoke("get_daily_summary", {
+          date: todayStr(), apiKey: currentKey, style: summaryStyle, provider,
+        });
+        if (!cards.length) return;
+        const text = cards[0];
+        if (xRequireReview) {
+          setPendingText(text);
+          setShowReview(true);
+          pendingRef.current = false;
+        } else {
+          await doPost(text);
+        }
+      } catch {
+        pendingRef.current = false;
+      }
+    }, xIntervalMinutes * 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xAutoPost, xIntervalMinutes, xRequireReview, xCredentialsOk, currentKey, summaryStyle, provider]);
+
+  useEffect(() => {
+    const patterns = [];
+    for (const cat of EXCLUSION_CATEGORIES) {
+      if (!activeCategories.has(cat.id)) continue;
+      const removals = new Set(categoryRemovals[cat.id] ?? []);
+      patterns.push(
+        ...cat.domains.filter((domain) => !removals.has(domain)),
+        ...(categoryAdditions[cat.id] ?? []),
+      );
+    }
+    invoke("set_exclusions", { patterns: [...new Set(patterns)] }).catch(console.error);
+  }, [activeCategories, categoryAdditions, categoryRemovals]);
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div style={styles.root}>
       {splashVisible && <SplashScreen fading={splashFading} />}
       <header style={styles.header}>
         <div style={{display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '.5rem'}}>
-          <img src={logo} alt="Trace" style={{height: 30}} />
+          <img src={logo} alt={''} style={{height: 30}} />
           <h2>Trace</h2>
         </div>
 
@@ -559,7 +538,7 @@ export default function App() {
             }} />
             {isPaused ? "Paused" : "Tracking"}
           </button>
-          <button style={styles.settingsBtn} onClick={() => setShowSettings((v) => !v)}>
+          <button style={styles.settingsBtn} onClick={() => setShowSettings((prev) => !prev)}>
             Settings
           </button>
         </div>
@@ -568,7 +547,7 @@ export default function App() {
       {showSettings && (
         <div style={styles.settingsPanel}>
           <div style={styles.settingsTabs}>
-            {(["ai", "privacy", "data", "social"] as const).map((tab) => (
+            {["ai", "privacy", "data", "social"].map((tab) => (
               <button
                 key={tab}
                 style={{ ...styles.settingsTab, ...(settingsTab === tab ? styles.settingsTabActive : {}) }}
@@ -579,17 +558,16 @@ export default function App() {
             ))}
           </div>
 
-          {/* ── AI tab ── */}
           {settingsTab === "ai" && (
             <div style={styles.tabContent}>
               <div style={styles.settingsRow}>
                 <span style={styles.settingsLabel}>Provider</span>
                 <div style={styles.providerTabs}>
-                  {PROVIDERS.map((p) => (
-                    <button key={p.id} onClick={() => saveProvider(p.id)}
-                      style={{ ...styles.providerTab, ...(p.id === provider ? styles.providerTabActive : {}) }}>
-                      {p.company}
-                      {apiKeys[p.id] && <span style={styles.keyDot} />}
+                  {PROVIDERS.map((providerOption) => (
+                    <button key={providerOption.id} onClick={() => saveProvider(providerOption.id)}
+                      style={{ ...styles.providerTab, ...(providerOption.id === provider ? styles.providerTabActive : {}) }}>
+                      {providerOption.company}
+                      {apiKeys[providerOption.id] && <span style={styles.keyDot} />}
                     </button>
                   ))}
                 </div>
@@ -609,7 +587,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── Privacy tab ── */}
           {settingsTab === "privacy" && (
             <div style={styles.tabContent}>
               <p style={styles.tabHint}>
@@ -622,12 +599,11 @@ export default function App() {
                 const isExpanded = expandedCategory === cat.id;
                 const removals = new Set(categoryRemovals[cat.id] ?? []);
                 const additions = categoryAdditions[cat.id] ?? [];
-                const visibleDefaults = cat.domains.filter((d) => !removals.has(d));
+                const visibleDefaults = cat.domains.filter((domain) => !removals.has(domain));
                 const totalCount = visibleDefaults.length + additions.length;
 
                 return (
                   <div key={cat.id} style={styles.catBlock}>
-                    {/* Category header row */}
                     <div style={styles.catHeader}>
                       <button style={styles.expandArrow} onClick={() => toggleExpand(cat.id)}>
                         {isExpanded ? "▾" : "▸"}
@@ -643,20 +619,19 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Expanded domain list */}
                     {isExpanded && (
                       <div style={styles.catBody}>
                         <div style={styles.domainGrid}>
-                          {visibleDefaults.map((d) => (
-                            <span key={d} style={styles.chipDefault}>
-                              {d}
-                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, d, "default")} title="Remove">×</button>
+                          {visibleDefaults.map((domain) => (
+                            <span key={domain} style={styles.chipDefault}>
+                              {domain}
+                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, domain, "default")} title="Remove">×</button>
                             </span>
                           ))}
-                          {additions.map((d) => (
-                            <span key={d} style={styles.chipAdded}>
-                              {d}
-                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, d, "added")} title="Remove">×</button>
+                          {additions.map((domain) => (
+                            <span key={domain} style={styles.chipAdded}>
+                              {domain}
+                              <button style={styles.chipX} onClick={() => removeDomain(cat.id, domain, "added")} title="Remove">×</button>
                             </span>
                           ))}
                         </div>
@@ -667,7 +642,7 @@ export default function App() {
                             placeholder="Add domain, e.g. mint.com"
                             value={categoryInputs[cat.id] ?? ""}
                             onChange={(e) =>
-                              setCategoryInputs((p) => ({ ...p, [cat.id]: e.target.value }))
+                              setCategoryInputs((prev) => ({ ...prev, [cat.id]: e.target.value }))
                             }
                             onKeyDown={(e) => e.key === "Enter" && addDomain(cat.id)}
                           />
@@ -681,7 +656,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── Data tab ── */}
           {settingsTab === "data" && (
             <div style={styles.tabContent}>
               <div style={styles.settingsRow}>
@@ -689,14 +663,14 @@ export default function App() {
                 <div style={styles.autoClearGroup}>
                   <select style={styles.select} value={autoClearMinutes}
                     onChange={(e) => saveAutoClear(Number(e.target.value))}>
-                    {AUTO_CLEAR_OPTIONS.map((o) => (
-                      <option key={o.minutes} value={o.minutes}>{o.label}</option>
+                    {AUTO_CLEAR_OPTIONS.map((option) => (
+                      <option key={option.minutes} value={option.minutes}>{option.label}</option>
                     ))}
                   </select>
                   <span style={styles.autoClearHint}>
                     {autoClearMinutes === 0
                       ? "History is kept indefinitely."
-                      : `Data older than ${AUTO_CLEAR_OPTIONS.find((o) => o.minutes === autoClearMinutes)?.label} is deleted automatically.`}
+                      : `Data older than ${AUTO_CLEAR_OPTIONS.find((option) => option.minutes === autoClearMinutes)?.label} is deleted automatically.`}
                   </span>
                 </div>
               </div>
@@ -735,7 +709,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ── Social tab ── */}
           {settingsTab === "social" && (
             <div style={styles.tabContent}>
               <p style={styles.tabHint}>
@@ -743,21 +716,21 @@ export default function App() {
               </p>
 
               {([
-                { label: "Client ID",             storageKey: "trace_x_cid", value: xClientId,             setter: setXClientId },
-                { label: "Client Secret",         storageKey: "trace_x_cse", value: xClientSecret,         setter: setXClientSecret },
-                { label: "Bearer Token",          storageKey: "trace_x_bt",  value: xBearerToken,          setter: setXBearerToken },
-                { label: "Consumer Key",          storageKey: "trace_x_ck",  value: xConsumerKey,          setter: setXConsumerKey },
-                { label: "Consumer Secret",       storageKey: "trace_x_cs",  value: xConsumerSecret,       setter: setXConsumerSecret },
-                { label: "Access Token",          storageKey: "trace_x_at",  value: xAccessToken,          setter: setXAccessToken },
-                { label: "Access Token Secret",   storageKey: "trace_x_ats", value: xAccessTokenSecret,    setter: setXAccessTokenSecret },
-              ] as const).map(({ label, storageKey, value, setter }) => (
+                { label: "Client ID",           storageKey: "trace_x_cid", value: xClientId,             setter: setXClientId },
+                { label: "Client Secret",       storageKey: "trace_x_cse", value: xClientSecret,         setter: setXClientSecret },
+                { label: "Bearer Token",        storageKey: "trace_x_bt",  value: xBearerToken,          setter: setXBearerToken },
+                { label: "Consumer Key",        storageKey: "trace_x_ck",  value: xConsumerKey,          setter: setXConsumerKey },
+                { label: "Consumer Secret",     storageKey: "trace_x_cs",  value: xConsumerSecret,       setter: setXConsumerSecret },
+                { label: "Access Token",        storageKey: "trace_x_at",  value: xAccessToken,          setter: setXAccessToken },
+                { label: "Access Token Secret", storageKey: "trace_x_ats", value: xAccessTokenSecret,    setter: setXAccessTokenSecret },
+              ]).map(({ label, storageKey, value, setter }) => (
                 <div key={storageKey} style={styles.settingsRow}>
                   <span style={styles.settingsLabel}>{label}</span>
                   <input
                     style={styles.settingsInput}
                     type="password"
                     value={value}
-                    onChange={(e) => saveXField(storageKey, setter as (v: string) => void, e.target.value)}
+                    onChange={(e) => saveXField(storageKey, setter, e.target.value)}
                   />
                 </div>
               ))}
@@ -779,8 +752,8 @@ export default function App() {
                         value={xIntervalMinutes}
                         onChange={(e) => saveXInterval(Number(e.target.value))}
                       >
-                        {POST_INTERVALS.map((o) => (
-                          <option key={o.minutes} value={o.minutes}>{o.label}</option>
+                        {POST_INTERVALS.map((interval) => (
+                          <option key={interval.minutes} value={interval.minutes}>{interval.label}</option>
                         ))}
                       </select>
                     </div>
@@ -808,16 +781,16 @@ export default function App() {
               <div style={styles.settingsRow}>
                 <span style={styles.settingsLabel}>Communities</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-                  {xCommunities.map((c, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ flex: 1, fontSize: 12, color: "var(--text)" }}>{c.name}</span>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{c.id}</span>
+                  {xCommunities.map((community, index) => (
+                    <div key={index} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 12, color: "var(--text)" }}>{community.name}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>{community.id}</span>
                       <button
                         style={styles.chipX}
                         onClick={() => {
-                          const next = xCommunities.filter((_, j) => j !== i);
+                          const next = xCommunities.filter((_, filterIndex) => filterIndex !== index);
                           saveXCommunities(next);
-                          if (xDefaultCommunityId === c.id) saveXDefaultCommunity("");
+                          if (xDefaultCommunityId === community.id) saveXDefaultCommunity("");
                         }}
                       >×</button>
                     </div>
@@ -859,8 +832,8 @@ export default function App() {
                     onChange={(e) => saveXDefaultCommunity(e.target.value)}
                   >
                     <option value="">Timeline</option>
-                    {xCommunities.map((c, i) => (
-                      <option key={i} value={c.id}>{c.name}</option>
+                    {xCommunities.map((community, index) => (
+                      <option key={index} value={community.id}>{community.name}</option>
                     ))}
                   </select>
                 </div>
@@ -886,7 +859,7 @@ export default function App() {
           </div>
 
           <div style={{ position: "relative" }}>
-            <button onClick={() => { setClearMenu((v) => !v); setClearConfirm(null); }}
+            <button onClick={() => { setClearMenu((prev) => !prev); setClearConfirm(null); }}
               style={{ ...styles.btn, ...styles.btnGhost, color: "var(--text-muted)" }}>
               Clear
             </button>
@@ -907,9 +880,9 @@ export default function App() {
                   ) : (
                     <>
                       <div style={styles.dropdownHeader}>Clear last…</div>
-                      {CLEAR_RANGES.map((r) => (
-                        <button key={r.minutes} style={styles.dropdownItem} onClick={() => setClearConfirm(r)}>
-                          {r.label}
+                      {CLEAR_RANGES.map((range) => (
+                        <button key={range.minutes} style={styles.dropdownItem} onClick={() => setClearConfirm(range)}>
+                          {range.label}
                         </button>
                       ))}
                     </>
@@ -932,7 +905,7 @@ export default function App() {
             <h2 style={styles.sectionTitle}>Compose</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <textarea
-                style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+                style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" }}
                 placeholder="Write a post…"
                 value={composerText}
                 onChange={(e) => setComposerText(e.target.value)}
@@ -987,7 +960,6 @@ export default function App() {
         </section>
       </main>
 
-      {/* ── Review modal ── */}
       {showReview && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modal}>
@@ -996,7 +968,7 @@ export default function App() {
               {pendingText.length} / 280
             </div>
             <textarea
-              style={{ ...styles.styleInput, minHeight: 100, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+              style={{ ...styles.styleInput, minHeight: 100, width: "100%", boxSizing: "border-box" }}
               value={pendingText}
               onChange={(e) => setPendingText(e.target.value)}
             />
@@ -1004,13 +976,13 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
                 <select
-                  style={{ ...styles.select, flex: 1, width: "auto" } as React.CSSProperties}
+                  style={{ ...styles.select, flex: 1, width: "auto" }}
                   value={xSelectedCommunityId}
                   onChange={(e) => setXSelectedCommunityId(e.target.value)}
                 >
                   <option value="">Timeline</option>
-                  {xCommunities.map((c, i) => (
-                    <option key={i} value={c.id}>{c.name}</option>
+                  {xCommunities.map((community, index) => (
+                    <option key={index} value={community.id}>{community.name}</option>
                   ))}
                 </select>
               </div>
@@ -1035,27 +1007,26 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Thread review modal ── */}
       {showThreadReview && (
         <div style={styles.modalBackdrop}>
-          <div style={{ ...styles.modal, width: 500 } as React.CSSProperties}>
+          <div style={{ ...styles.modal, width: 500 }}>
             <h3 style={styles.modalTitle}>Review thread</h3>
-            {pendingThreadTexts.map((text, i) => (
-              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {pendingThreadTexts.map((text, index) => (
+              <div key={index} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {i === 0 ? "Post" : `Reply ${i}`}
+                    {index === 0 ? "Post" : `Reply ${index}`}
                   </span>
-                  <span style={{ ...styles.charCount, ...(text.length > 280 ? { color: "#ef4444" } : {}) } as React.CSSProperties}>
+                  <span style={{ ...styles.charCount, ...(text.length > 280 ? { color: "#ef4444" } : {}) }}>
                     {text.length} / 280
                   </span>
                 </div>
                 <textarea
-                  style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" } as React.CSSProperties}
+                  style={{ ...styles.styleInput, minHeight: 80, width: "100%", boxSizing: "border-box" }}
                   value={text}
                   onChange={(e) => {
                     const next = [...pendingThreadTexts];
-                    next[i] = e.target.value;
+                    next[index] = e.target.value;
                     setPendingThreadTexts(next);
                   }}
                 />
@@ -1065,13 +1036,13 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Post to</span>
                 <select
-                  style={{ ...styles.select, flex: 1, width: "auto" } as React.CSSProperties}
+                  style={{ ...styles.select, flex: 1, width: "auto" }}
                   value={xSelectedCommunityId}
                   onChange={(e) => setXSelectedCommunityId(e.target.value)}
                 >
                   <option value="">Timeline</option>
-                  {xCommunities.map((c, i) => (
-                    <option key={i} value={c.id}>{c.name}</option>
+                  {xCommunities.map((community, index) => (
+                    <option key={index} value={community.id}>{community.name}</option>
                   ))}
                 </select>
               </div>
@@ -1086,7 +1057,7 @@ export default function App() {
               </button>
               <button
                 style={{ ...styles.btn, ...styles.btnDarkAccent }}
-                disabled={xThreadPosting || pendingThreadTexts.some((t) => t.length === 0 || t.length > 280)}
+                disabled={xThreadPosting || pendingThreadTexts.some((text) => text.length === 0 || text.length > 280)}
                 onClick={() => doPostThread(pendingThreadTexts, xSelectedCommunityId)}
               >
                 {xThreadPosting ? "Posting…" : "Post thread"}
@@ -1096,7 +1067,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Success toast ── */}
       {xPostSuccess && (
         <div style={styles.successToast}>Posted to X</div>
       )}
@@ -1113,9 +1083,7 @@ export default function App() {
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
+const styles = {
   root: { minHeight: "100vh", display: "flex", flexDirection: "column" },
 
   header: {
@@ -1124,13 +1092,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid var(--border)", background: "var(--surface)",
     position: "sticky", top: 0, zIndex: 10,
   },
-  logo: { display: "flex", alignItems: "center", gap: 10 },
-  logoMark: {
-    width: 28, height: 28, background: "var(--accent)", color: "#fff",
-    borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
-    fontWeight: 700, fontSize: 15,
-  },
-  logoText: { fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em" },
   headerRight: { display: "flex", alignItems: "center", gap: 12 },
   shieldBadge: { fontSize: 11, color: "var(--text-muted)" },
   activeProvider: { fontSize: 11, color: "var(--text-muted)" },
@@ -1139,7 +1100,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)",
     borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 500,
     color: "#22c55e", cursor: "pointer",
-  } as React.CSSProperties,
+  },
   trackingPillPaused: {
     background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)", color: "#ef4444",
   },
@@ -1170,12 +1131,12 @@ const styles: Record<string, React.CSSProperties> = {
   providerTab: {
     position: "relative", background: "var(--surface)", border: "1px solid var(--border)",
     borderRadius: 6, color: "var(--text-muted)", fontSize: 12, padding: "5px 12px", cursor: "pointer",
-  } as React.CSSProperties,
+  },
   providerTabActive: { background: "var(--accent-dim)", borderColor: "var(--accent)", color: "#fff" },
   keyDot: {
     position: "absolute", top: 4, right: 4, width: 5, height: 5,
     borderRadius: "50%", background: "#22c55e",
-  } as React.CSSProperties,
+  },
   settingsInput: {
     flex: 1, background: "var(--surface)", border: "1px solid var(--border)",
     borderRadius: 6, color: "var(--text)", padding: "6px 10px",
@@ -1186,9 +1147,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6, color: "var(--text)", padding: "8px 10px",
     outline: "none", resize: "vertical", lineHeight: 1.5,
     fontFamily: "inherit", fontSize: 13,
-  } as React.CSSProperties,
+  },
 
-  // Privacy
   catBlock: {
     border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden",
   },
@@ -1206,12 +1166,12 @@ const styles: Record<string, React.CSSProperties> = {
   toggle: {
     width: 36, height: 20, borderRadius: 10, background: "var(--border)",
     border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0,
-  } as React.CSSProperties,
+  },
   toggleOn: { background: "var(--accent)" },
   toggleThumb: {
     position: "absolute", top: 3, left: 3, width: 14, height: 14,
     borderRadius: "50%", background: "#fff", transition: "left 0.2s",
-  } as React.CSSProperties,
+  },
   toggleThumbOn: { left: 19 },
   catBody: {
     padding: "12px 14px", borderTop: "1px solid var(--border)",
@@ -1245,7 +1205,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12, cursor: "pointer",
   },
 
-  // Data tab
   autoClearGroup: { display: "flex", flexDirection: "column", gap: 6 },
   scheduleGroup: { display: "flex", flexDirection: "column", gap: 6 },
   scheduleInputRow: { display: "flex", alignItems: "center", gap: 8 },
@@ -1254,7 +1213,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
     color: "var(--text)", padding: "5px 8px", fontSize: 12, fontFamily: "inherit",
     outline: "none", colorScheme: "dark",
-  } as React.CSSProperties,
+  },
   clearScheduleBtn: {
     background: "none", border: "1px solid var(--border)", borderRadius: 6,
     color: "var(--text-muted)", fontSize: 11, padding: "4px 10px", cursor: "pointer",
@@ -1263,7 +1222,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6,
     color: "var(--text)", padding: "6px 10px", fontSize: 13, fontFamily: "inherit",
     outline: "none", colorScheme: "dark", width: 180,
-  } as React.CSSProperties,
+  },
   autoClearHint: { fontSize: 11, color: "var(--text-muted)" },
 
   doneBtn: {
@@ -1286,16 +1245,15 @@ const styles: Record<string, React.CSSProperties> = {
   btn: { padding: "6px 14px", borderRadius: 6, fontWeight: 500, cursor: "pointer", border: "none" },
   btnGhost: { background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" },
   btnDarkAccent: { background: "var(--dark-accent)", color: "#fff" },
-  btnAccent: { background: "var(--accent)", color: "#fff" },
   stats: { display: "flex", gap: 6 },
   statChip: { fontSize: 11, fontWeight: 500, padding: "3px 8px", borderRadius: 20 },
 
-  backdrop: { position: "fixed", inset: 0, zIndex: 19 } as React.CSSProperties,
+  backdrop: { position: "fixed", inset: 0, zIndex: 19 },
   clearDropdown: {
     position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20,
     background: "var(--surface-2)", border: "1px solid var(--border)",
     borderRadius: 8, minWidth: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden",
-  } as React.CSSProperties,
+  },
   dropdownHeader: {
     padding: "8px 14px 4px", fontSize: 11, fontWeight: 600,
     color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em",
@@ -1304,7 +1262,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "block", width: "100%", textAlign: "left",
     background: "none", border: "none", color: "var(--text)",
     padding: "8px 14px", fontSize: 13, cursor: "pointer",
-  } as React.CSSProperties,
+  },
   confirmBox: { padding: 14, display: "flex", flexDirection: "column", gap: 10 },
   confirmText: { fontSize: 13, color: "var(--text)", lineHeight: 1.4 },
   confirmBtns: { display: "flex", gap: 8, justifyContent: "flex-end" },
@@ -1325,15 +1283,15 @@ const styles: Record<string, React.CSSProperties> = {
     position: "fixed", inset: 0, zIndex: 50,
     background: "rgba(0,0,0,0.6)", display: "flex",
     alignItems: "center", justifyContent: "center",
-  } as React.CSSProperties,
+  },
   modal: {
     background: "var(--surface-2)", border: "1px solid var(--border)",
     borderRadius: 12, padding: 24, width: 420, maxWidth: "90vw",
     display: "flex", flexDirection: "column", gap: 14,
     boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
-  } as React.CSSProperties,
+  },
   modalTitle: { fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 },
-  charCount: { fontSize: 11, color: "var(--text-muted)", textAlign: "right" } as React.CSSProperties,
+  charCount: { fontSize: 11, color: "var(--text-muted)", textAlign: "right" },
   modalBtns: { display: "flex", gap: 8, justifyContent: "flex-end" },
   xError: {
     background: "#2a0a0a", border: "1px solid #5a1a1a",
@@ -1344,7 +1302,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#14532d", border: "1px solid #166534",
     borderRadius: 8, color: "#86efac", padding: "10px 18px",
     fontSize: 13, fontWeight: 500, boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-  } as React.CSSProperties,
+  },
   section: { display: "flex", flexDirection: "column", gap: 14 },
   sectionTitle: {
     fontSize: 13, fontWeight: 600, color: "var(--text-muted)",

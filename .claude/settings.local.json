@@ -20,7 +20,9 @@
       "Bash(taskkill //PID 16724 //F)",
       "Bash(taskkill //PID 26460 //F)",
       "Bash(taskkill //PID 30636 //F)",
-      "Bash(cargo tauri *)"
+      "Bash(cargo tauri *)",
+      "PowerShell(& \"$env:USERPROFILE\\\\.cargo\\\\bin\\\\cargo.exe\" check --manifest-path \"C:\\\\Users\\\\mccal\\\\Software Engineering\\\\trace\\\\src-tauri\\\\Cargo.toml\" 2>&1)",
+      "PowerShell(where.exe cargo 2>&1; ls \"C:\\\\Users\\\\mccal\\\\\" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match \"cargo|rust\" })"
     ]
   }
 }

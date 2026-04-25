@@ -1,1 +1,142 @@
+/*Flex Classes ------------------*/
+.flex { display: flex; }
+.gap-quarter { gap: .25rem; }
+.gap-half { gap: .5rem; }
+.gap1 { gap: 1rem; }
 
+/*Margin Classes ----------------*/
+.mb-0 { margin-bottom: 0; }
+.mb-quarter { margin-bottom: .25rem; }
+.mb-half { margin-bottom: .5rem; }
+.mb-1 { margin-bottom: 1rem; }
+
+/*Text Classes ------------------*/
+.text-white { color: white; }
+.text-left { text-align: left; }
+.text-light { color: rgba(255,255,255,.4); }
+.faint-text { opacity: .25; font-size: .75rem; }
+
+/*Layout Classes ----------------*/
+.scrollable { overflow: auto; }
+.scrollable::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollable::-webkit-scrollbar-track { background: transparent; }
+.scrollable::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+.scrollable::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+.span-2-col { grid-column: span 2; }
+.child-hover-underline > *:hover { text-decoration: underline; }
+
+/*Input Classes -----------------*/
+.dark {
+  background: #141414;
+  color: white;
+  border: 1px solid rgba(255,255,255,.2);
+}
+.input {
+  background: #141414;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  color: white;
+  padding: .5rem .75rem;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  transition: border-color .15s ease-in-out;
+}
+.input:focus { border-color: rgba(255,255,255,.4); }
+.select {
+  background: #141414;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  color: white;
+  padding: .5rem .75rem;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  color-scheme: dark;
+  transition: border-color .15s ease-in-out;
+}
+.select:focus { border-color: rgba(255,255,255,.4); }
+.inputWithButton {
+  display: flex;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.inputWithButton input {
+  flex: 1;
+  background: #141414;
+  border: none;
+  color: white;
+  padding: .5rem .75rem;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.inputWithButton button {
+  background: rgba(255,255,255,.08);
+  border: none;
+  border-left: 1px solid rgba(255,255,255,.2);
+  color: white;
+  padding: .5rem 1rem;
+  cursor: pointer;
+  transition: background .15s ease-in-out;
+}
+.inputWithButton button:hover { background: rgba(255,255,255,.15); }
+.inputWithDropdown {
+  display: flex;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.inputWithDropdown input {
+  flex: 1;
+  background: #141414;
+  border: none;
+  color: white;
+  padding: .5rem .75rem;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.inputWithDropdown select {
+  background: rgba(255,255,255,.08);
+  border: none;
+  border-left: 1px solid rgba(255,255,255,.2);
+  color: white;
+  padding: .5rem .5rem;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+/*Button Classes ----------------*/
+.button {
+  background: #f55541;
+  color: white;
+  border: none;
+  border-radius: .5rem;
+  padding: .5rem 1.25rem;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease-in-out;
+}
+.button:hover { background: #e04432; }
+.dark-button {
+  background: rgba(255,255,255,.08);
+  color: white;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: .5rem;
+  padding: .5rem 1.25rem;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s ease-in-out;
+}
+.dark-button:hover { background: rgba(255,255,255,.15); }

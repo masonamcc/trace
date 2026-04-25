@@ -1,10 +1,6 @@
 import logo from "../assets/trace_favicon.png";
 
-interface Props {
-  fading: boolean;
-}
-
-export default function SplashScreen({ fading }: Props) {
+export default function SplashScreen({ fading }) {
   return (
     <div style={{
       position: "fixed",
@@ -18,7 +14,7 @@ export default function SplashScreen({ fading }: Props) {
     }}>
       <img
         src={logo}
-        alt="Trace"
+        alt={''}
         style={{
           width: 80,
           height: 80,
